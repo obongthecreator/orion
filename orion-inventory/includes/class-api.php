@@ -892,19 +892,20 @@ class Orion_API {
 			return new WP_REST_Response( [ 'success' => false, 'message' => 'File size exceeds the 5 MB limit' ], 400 );
 		}
 
-		// Validate MIME type — allow only common image formats.
-		$allowed_mime_types = [ 'image/jpeg', 'image/png', 'image/gif', 'image/webp' ];
-		$file_type          = wp_check_filetype_and_ext( $file['tmp_name'], $file['name'] );
+		// Validate that the file is an image (any image type is allowed).
+		$file_type = wp_check_filetype_and_ext( $file['tmp_name'], $file['name'] );
 
-		if ( empty( $file_type['type'] ) || ! in_array( $file_type['type'], $allowed_mime_types, true ) ) {
-			return new WP_REST_Response( [ 'success' => false, 'message' => 'Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed' ], 400 );
+		if ( empty( $file_type['type'] ) || strpos( $file_type['type'], 'image/' ) !== 0 ) {
+			return new WP_REST_Response( [ 'success' => false, 'message' => 'Invalid file type. Please upload an image file.' ], 400 );
 		}
 
 		if ( ! function_exists( 'wp_handle_upload' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/file.php';
 		}
 
-		$overrides = [ 'test_form' => false, 'mimes' => array_fill_keys( [ 'jpg|jpeg|jpe', 'png', 'gif', 'webp' ], '' ) ];
+		// Allow all image MIME types that WordPress recognises.
+		$all_image_mimes = array_filter( wp_get_mime_types(), fn( $type ) => strpos( $type, 'image/' ) === 0 );
+		$overrides = [ 'test_form' => false, 'mimes' => $all_image_mimes ];
 		$uploaded  = wp_handle_upload( $file, $overrides );
 
 		if ( isset( $uploaded['error'] ) ) {
