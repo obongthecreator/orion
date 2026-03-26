@@ -458,9 +458,9 @@ function renderTable() {
 
   page.forEach((repair, i) => {
     const globalIdx = start + i;
-    const date      = repair.date || repair.created_at
-      ? new Date(repair.date || repair.created_at).toLocaleDateString('en-NG', { day: '2-digit', month: 'short', year: 'numeric' })
-      : '—';
+    const dateObj   = repair.created_at ? new Date(repair.created_at) : (repair.date ? new Date(repair.date) : null);
+    const date      = dateObj ? dateObj.toLocaleDateString('en-NG', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+    const timeStr   = dateObj ? dateObj.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
     const payMethod = (repair.payment_method || '').toLowerCase();
     const badgeCls  = payMethod === 'cash' ? 'badge-cash' : payMethod === 'both' ? 'badge-both' : 'badge-transfer';
     const complaint = (repair.complaint || '').substring(0, 60) + ((repair.complaint || '').length > 60 ? '…' : '');
@@ -473,6 +473,7 @@ function renderTable() {
     tr.innerHTML = `
       <td>
         <div class="font-medium text-sm text-white">${date}</div>
+        <div class="text-xs mt-0.5" style="color:rgba(255,255,255,0.45);">${timeStr}</div>
         <div class="text-xs mt-0.5" style="color:rgba(255,255,255,0.35);">${repair.id ? '#' + repair.id : ''}</div>
       </td>
       <td>
@@ -642,8 +643,10 @@ function showDetailModal(idx) {
   const total = parseFloat(repair.total) || parseFloat(repair.price) || 0;
   const payMethod = (repair.payment_method || '').toLowerCase();
   const badgeCls  = payMethod === 'cash' ? 'badge-cash' : payMethod === 'both' ? 'badge-both' : 'badge-transfer';
-  const date = repair.date || repair.created_at
-    ? new Date(repair.date || repair.created_at).toLocaleDateString('en-NG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+  const dateObj   = repair.created_at ? new Date(repair.created_at) : (repair.date ? new Date(repair.date) : null);
+  const date      = dateObj
+    ? dateObj.toLocaleDateString('en-NG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) +
+      ' ' + dateObj.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true })
     : '—';
 
   document.getElementById('detailContent').innerHTML = `
@@ -690,9 +693,8 @@ function showReceipt(idx) {
   const repair  = filteredRepairs[idx];
   if (!repair) return;
   const total   = parseFloat(repair.total) || parseFloat(repair.price) || 0;
-  const dateStr = repair.date || repair.created_at
-    ? new Date(repair.date || repair.created_at).toLocaleString('en-NG')
-    : new Date().toLocaleString('en-NG');
+  const dateStr = repair.created_at ? new Date(repair.created_at).toLocaleString('en-NG')
+    : (repair.date ? new Date(repair.date).toLocaleString('en-NG') : new Date().toLocaleString('en-NG'));
   const method  = (repair.payment_method || '').toLowerCase();
 
   let lines = '';

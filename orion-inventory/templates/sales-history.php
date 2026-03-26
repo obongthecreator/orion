@@ -429,14 +429,16 @@ function renderTable() {
   if (!filteredSales.length) { setTableState('empty'); return; }
   setTableState('hidden');
 
-  const totalRev = filteredSales.reduce((s, r) => s + (parseFloat(r.grand_total) || 0), 0);
+  const totalRev = filteredSales.reduce((s, r) => s + (parseFloat(r.total_amount) || 0), 0);
   document.getElementById('resultCount').textContent  = filteredSales.length;
   document.getElementById('totalRevenue').textContent = fmt(totalRev);
 
   tbody.innerHTML = '';
   page.forEach((sale, i) => {
     const globalIdx = start + i;
-    const date      = sale.order_date ? new Date(sale.order_date).toLocaleDateString('en-NG', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+    const dateObj   = sale.created_at ? new Date(sale.created_at) : (sale.order_date ? new Date(sale.order_date) : null);
+    const date      = dateObj ? dateObj.toLocaleDateString('en-NG', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+    const timeStr   = dateObj ? dateObj.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
     const items     = Array.isArray(sale.items) ? sale.items : [];
     const summary   = items.length
       ? items.slice(0, 2).map(it => it.product_name || it.name || 'Item').join(', ') + (items.length > 2 ? ` +${items.length - 2} more` : '')
@@ -451,6 +453,7 @@ function renderTable() {
     tr.innerHTML = `
       <td>
         <div class="font-medium text-sm text-white">${date}</div>
+        <div class="text-xs mt-0.5" style="color:rgba(255,255,255,0.45);">${timeStr}</div>
         <div class="text-xs mt-0.5" style="color:rgba(255,255,255,0.35);">${sale.id ? '#' + sale.id : ''}</div>
       </td>
       <td>
@@ -461,7 +464,7 @@ function renderTable() {
         <span class="line-clamp-2">${escHtml(summary)}</span>
       </td>
       <td>
-        <span class="font-bold" style="color:#32EDFF;">${fmt(sale.grand_total)}</span>
+        <span class="font-bold" style="color:#32EDFF;">${fmt(sale.total_amount)}</span>
       </td>
       <td><span class="badge ${badgeCls}">${escHtml(sale.payment_method || '—')}</span></td>
       <td class="text-sm" style="color:rgba(255,255,255,0.6);">${escHtml(sale.staff_name || '—')}</td>
@@ -507,7 +510,7 @@ function renderTable() {
               <div class="flex justify-between"><span style="color:rgba(255,255,255,0.5);">Method</span><span class="font-medium">${escHtml(sale.payment_method || '—')}</span></div>
               ${sale.transfer_amount > 0 ? `<div class="flex justify-between"><span style="color:rgba(255,255,255,0.5);">Transfer</span><span class="font-medium">${fmt(sale.transfer_amount)}</span></div>` : ''}
               ${sale.cash_amount > 0 ? `<div class="flex justify-between"><span style="color:rgba(255,255,255,0.5);">Cash</span><span class="font-medium">${fmt(sale.cash_amount)}</span></div>` : ''}
-              <div class="flex justify-between pt-1 border-t" style="border-color:rgba(255,255,255,0.08);"><span style="color:rgba(255,255,255,0.5);">Grand Total</span><span class="font-bold" style="color:#32EDFF;">${fmt(sale.grand_total)}</span></div>
+              <div class="flex justify-between pt-1 border-t" style="border-color:rgba(255,255,255,0.08);"><span style="color:rgba(255,255,255,0.5);">Grand Total</span><span class="font-bold" style="color:#32EDFF;">${fmt(sale.total_amount)}</span></div>
             </div>
           </div>
         </div>
@@ -620,7 +623,7 @@ function showReceipt(idx) {
   if (!sale) return;
 
   const items   = Array.isArray(sale.items) ? sale.items : [];
-  const dateStr = sale.order_date ? new Date(sale.order_date).toLocaleString('en-NG') : new Date().toLocaleString('en-NG');
+  const dateStr = sale.created_at ? new Date(sale.created_at).toLocaleString('en-NG') : (sale.order_date ? new Date(sale.order_date).toLocaleString('en-NG') : new Date().toLocaleString('en-NG'));
   const method  = (sale.payment_method || '').toLowerCase();
 
   let lines = '';
@@ -642,7 +645,7 @@ function showReceipt(idx) {
     lines += ` = ${fmt(total)}\n`;
   });
   lines += `--------------------------------\n`;
-  lines += `TOTAL     : ${fmt(sale.grand_total)}\n`;
+  lines += `TOTAL     : ${fmt(sale.total_amount)}\n`;
   lines += `Payment   : ${(sale.payment_method || '').toUpperCase()}\n`;
   if (sale.transfer_amount > 0) lines += `Transfer  : ${fmt(sale.transfer_amount)}\n`;
   if (sale.cash_amount > 0)     lines += `Cash      : ${fmt(sale.cash_amount)}\n`;

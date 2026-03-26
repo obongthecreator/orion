@@ -348,11 +348,17 @@ $is_admin     = in_array( $user_role, [ 'admin', 'super_admin' ], true );
         </div>
       </div>
 
-      <!-- Order date -->
+      <!-- Order date / live clock -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label for="orderDate">Order Date</label>
-          <input type="date" id="orderDate" class="orion-input">
+          <label>Date &amp; Time</label>
+          <div class="orion-input flex items-center gap-3" style="cursor:default;user-select:none;">
+            <iconify-icon icon="solar:calendar-bold" style="color:#32EDFF;font-size:1.1rem;flex-shrink:0;"></iconify-icon>
+            <span id="orderDateDisplay" class="font-medium text-sm text-white"></span>
+            <span style="color:rgba(255,255,255,0.3);">|</span>
+            <iconify-icon icon="solar:clock-circle-bold" style="color:#32EDFF;font-size:1.1rem;flex-shrink:0;"></iconify-icon>
+            <span id="orderClockDisplay" class="font-mono font-semibold" style="color:#32EDFF;letter-spacing:0.05em;"></span>
+          </div>
         </div>
       </div>
     </section>
@@ -644,8 +650,18 @@ document.getElementById('confirmCheck').addEventListener('change', function() {
   document.getElementById('submitBtn').disabled = !this.checked;
 });
 
-/* ── Set today's date ── */
-document.getElementById('orderDate').value = new Date().toISOString().split('T')[0];
+/* ── Live date + clock ── */
+(function startOrderClock() {
+  function tick() {
+    const now = new Date();
+    document.getElementById('orderDateDisplay').textContent =
+      now.toLocaleDateString('en-NG', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+    document.getElementById('orderClockDisplay').textContent =
+      now.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+  }
+  tick();
+  setInterval(tick, 1000);
+})();
 
 /* ── Submit ── */
 document.getElementById('submitBtn').addEventListener('click', async () => {
@@ -697,7 +713,7 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
     payment_method:     payMethod,
     transfer_amount:    payMethod === 'cash'     ? 0 : transferAmount,
     cash_amount:        payMethod === 'transfer' ? 0 : cashAmount,
-    order_date:         document.getElementById('orderDate').value,
+    order_date:         new Date().toISOString().split('T')[0],
     total_amount:       grandTotal,
     discount_total:     parseNum(document.getElementById('discountTotal').textContent),
   };
@@ -791,7 +807,6 @@ document.getElementById('newSaleBtn').addEventListener('click', () => {
   ['transferField','cashField','remainingField'].forEach(id => document.getElementById(id).classList.add('hidden'));
   document.getElementById('transferAmount').value = '';
   document.getElementById('cashAmount').value     = '';
-  document.getElementById('orderDate').value      = new Date().toISOString().split('T')[0];
   updateTotals();
   addRow();
 });

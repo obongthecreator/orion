@@ -446,7 +446,18 @@ $user_role    = $current_user['role'] ?? 'staff';
         </div>
 
         <!-- Confirmation + Submit -->
-        <div class="glass-card p-5 mb-6">
+        <div class="glass-card p-5 mb-5">
+          <!-- Live date + clock -->
+          <div class="mb-4">
+            <label class="block text-xs font-semibold uppercase tracking-wider mb-1.5" style="color:rgba(255,255,255,0.5);">Date &amp; Time</label>
+            <div class="orion-input flex items-center gap-3" style="cursor:default;user-select:none;">
+              <iconify-icon icon="solar:calendar-bold" style="color:#32EDFF;font-size:1.1rem;flex-shrink:0;"></iconify-icon>
+              <span id="creditDateDisplay" class="font-medium text-sm text-white"></span>
+              <span style="color:rgba(255,255,255,0.3);">|</span>
+              <iconify-icon icon="solar:clock-circle-bold" style="color:#32EDFF;font-size:1.1rem;flex-shrink:0;"></iconify-icon>
+              <span id="creditClockDisplay" class="font-mono font-semibold" style="color:#32EDFF;letter-spacing:0.05em;"></span>
+            </div>
+          </div>
           <label class="flex items-start gap-3 cursor-pointer">
             <input type="checkbox" id="confirmCheck" class="mt-0.5 w-4 h-4 rounded accent-cyan-400" required>
             <span class="text-sm" style="color:rgba(255,255,255,0.7);">
@@ -1234,6 +1245,19 @@ $user_role    = $current_user['role'] ?? 'staff';
      Init
   ───────────────────────────────────────── */
   loadProducts().then(() => addItemRow());
+
+  /* ── Live date + clock ── */
+  (function startCreditClock() {
+    function tick() {
+      const now = new Date();
+      const d = document.getElementById('creditDateDisplay');
+      const c = document.getElementById('creditClockDisplay');
+      if (d) d.textContent = now.toLocaleDateString('en-NG', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+      if (c) c.textContent = now.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+    }
+    tick();
+    setInterval(tick, 1000);
+  })();
   </script>
 </body>
 </html>

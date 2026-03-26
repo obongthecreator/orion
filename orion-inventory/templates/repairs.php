@@ -364,7 +364,18 @@ $is_admin     = in_array( $user_role, [ 'admin', 'super_admin' ], true );
     </section>
 
     <!-- Submit -->
-    <section class="glass-card p-5">
+    <section class="glass-card p-5 space-y-4">
+      <!-- Live date + clock -->
+      <div>
+        <label class="field-label">Date &amp; Time</label>
+        <div class="orion-input flex items-center gap-3" style="cursor:default;user-select:none;">
+          <iconify-icon icon="solar:calendar-bold" style="color:#32EDFF;font-size:1.1rem;flex-shrink:0;"></iconify-icon>
+          <span id="repairDateDisplay" class="font-medium text-sm text-white"></span>
+          <span style="color:rgba(255,255,255,0.3);">|</span>
+          <iconify-icon icon="solar:clock-circle-bold" style="color:#32EDFF;font-size:1.1rem;flex-shrink:0;"></iconify-icon>
+          <span id="repairClockDisplay" class="font-mono font-semibold" style="color:#32EDFF;letter-spacing:0.05em;"></span>
+        </div>
+      </div>
       <button type="button" id="submitBtn" class="btn-primary">
         <iconify-icon icon="solar:check-circle-bold" style="font-size:1.1rem;"></iconify-icon>
         <span id="submitText">Save Repair</span>
@@ -706,6 +717,19 @@ document.getElementById('newRepairBtn').addEventListener('click', () => {
 
 /* ── Init ── */
 loadCategories();
+
+/* ── Live date + clock ── */
+(function startRepairClock() {
+  function tick() {
+    const now = new Date();
+    document.getElementById('repairDateDisplay').textContent =
+      now.toLocaleDateString('en-NG', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+    document.getElementById('repairClockDisplay').textContent =
+      now.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+  }
+  tick();
+  setInterval(tick, 1000);
+})();
 </script>
 
 <script>
