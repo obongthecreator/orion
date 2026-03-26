@@ -1,0 +1,39 @@
+name: Build Plugin ZIP
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - 'copilot/**'
+    paths:
+      - 'orion-inventory/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build plugin ZIP
+        run: zip -r orion-inventory.zip orion-inventory/
+
+      - name: Upload ZIP as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orion-inventory
+          path: orion-inventory.zip
+          retention-days: 90
+
+      - name: Commit updated ZIP to repository
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add orion-inventory.zip
+          git diff --cached --quiet || git commit -m "chore: rebuild orion-inventory.zip [skip ci]"
+          git push
