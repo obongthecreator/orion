@@ -116,6 +116,13 @@ $user_name    = $current_user['display_name'] ?? $current_user['username'] ?? 'U
         Import Lines
       </h2>
       <div class="flex items-center gap-2">
+        <!-- Search to filter rows -->
+        <div class="flex items-center gap-1.5 rounded-lg px-2 py-1.5" style="background:rgba(255,255,255,0.05);border:1px solid rgba(50,237,255,0.18);">
+          <iconify-icon icon="solar:magnifer-linear" width="15" style="color:#32EDFF;flex-shrink:0"></iconify-icon>
+          <input type="search" id="importSearch" placeholder="Search product…"
+                 style="background:transparent;border:none;outline:none;color:#fff;font-size:0.8rem;width:150px;font-family:'Inter',sans-serif;"
+                 oninput="filterImportRows()" />
+        </div>
         <button id="saveAllBtn" class="btn-primary text-sm px-4 py-2">
           <iconify-icon icon="solar:diskette-linear" width="15"></iconify-icon>
           Save All
@@ -330,6 +337,18 @@ async function loadImportsForDate() {
 
 /* ── Add row button ── */
 document.getElementById('addRowBtn').addEventListener('click', () => addRow());
+
+/* ── Filter import rows by product name ── */
+function filterImportRows() {
+  const q = (document.getElementById('importSearch')?.value || '').toLowerCase().trim();
+  document.querySelectorAll('#importBody tr').forEach(tr => {
+    if (!q) { tr.style.display = ''; return; }
+    const name = (tr.querySelector('.product-name')?.textContent || '').toLowerCase();
+    const sel  = tr.querySelector('.product-sel');
+    const selText = sel ? (sel.options[sel.selectedIndex]?.text || '').toLowerCase() : '';
+    tr.style.display = (name.includes(q) || selText.includes(q)) ? '' : 'none';
+  });
+}
 
 /* ── Init ── */
 (async () => {

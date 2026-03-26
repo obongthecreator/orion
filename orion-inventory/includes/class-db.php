@@ -839,13 +839,16 @@ class Orion_DB {
 		global $wpdb;
 		$date = sanitize_text_field( $date );
 
+		// Import qty is read from the imports table (sum of quantities imported on that date)
+		// so it always reflects the actual imports regardless of whether the stock row was
+		// pre-populated by add_import_qty.
 		return $wpdb->get_results(
 			$wpdb->prepare(
 				'SELECT p.id AS product_id, p.name AS product_name,
 				        COALESCE(c.name, \'\') AS category,
 				        COALESCE(st.id, 0)             AS stock_id,
 				        COALESCE(st.opening_stock, 0)  AS opening_stock,
-				        COALESCE(st.import_qty, 0)     AS import_qty,
+				        COALESCE(imp_sum.total_import, 0) AS import_qty,
 				        COALESCE(st.sold_stock, 0)     AS sold_stock,
 				        COALESCE(st.sold_stock, 0)     AS sold_qty,
 				        COALESCE(st.closing_stock, 0)  AS closing_stock,
@@ -854,8 +857,15 @@ class Orion_DB {
 				LEFT JOIN ' . self::table('categories') . ' c ON c.id = p.category_id
 				LEFT JOIN ' . self::table('stock') . ' st
 				       ON st.product_id = p.id AND st.date = %s
+				LEFT JOIN (
+				    SELECT product_id, SUM(quantity) AS total_import
+				    FROM ' . self::table('imports') . '
+				    WHERE DATE(created_at) = %s
+				    GROUP BY product_id
+				) imp_sum ON imp_sum.product_id = p.id
 				WHERE p.type = \'sales\'
 				ORDER BY c.name ASC, p.name ASC',
+				$date,
 				$date
 			)
 		);

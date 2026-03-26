@@ -337,7 +337,7 @@ $user_name    = $current_user['display_name'] ?? $current_user['username'] ?? 'U
           <div class="cash-left-value" id="cashLeftDisplay">₦0.00</div>
           <input type="hidden" id="cash_left" name="cash_left" value="0">
           <p class="text-xs" style="color:rgba(50,237,255,0.5);font-style:italic;max-width:300px;">
-            = Total Sales − Transfer/Card + Debtors Cash − Expense + Old Cash
+            = Cash Sales + Old Cash + Debtors Cash − Expenses
           </p>
         </div>
       </div>
@@ -410,12 +410,11 @@ $user_name    = $current_user['display_name'] ?? $current_user['username'] ?? 'U
 
   /* ── Real-time calculations ── */
   function calculateCashLeft() {
-    const totalSales  = parseNum('total_sales');
-    const transferCard = parseNum('transfer_card_sales');
+    const cashSales   = parseNum('cash_sales');
+    const oldCash     = parseNum('old_cash');
     const debtorsCash = parseNum('debtors_cash');
     const expense     = parseNum('expense');
-    const oldCash     = parseNum('old_cash');
-    const cashLeft    = totalSales - transferCard + debtorsCash - expense + oldCash;
+    const cashLeft    = cashSales + oldCash + debtorsCash - expense;
     return cashLeft;
   }
 

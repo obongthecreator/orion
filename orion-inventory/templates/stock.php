@@ -67,7 +67,7 @@ $user_name    = $current_user['display_name'] ?? $current_user['username'] ?? 'U
 
 <main class="max-w-6xl mx-auto px-4 py-6 space-y-5">
 
-  <!-- Date + Formula Info -->
+  <!-- Date + Search + Formula Info -->
   <div class="flex flex-wrap items-center gap-4">
     <div class="glass-card p-4 flex items-center gap-3 flex-shrink-0">
       <iconify-icon icon="solar:calendar-linear" width="20" style="color:#32EDFF"></iconify-icon>
@@ -75,6 +75,13 @@ $user_name    = $current_user['display_name'] ?? $current_user['username'] ?? 'U
         <label class="block text-xs text-white/40 font-semibold uppercase tracking-wider mb-1">Stock Date</label>
         <input type="date" id="stockDate" class="date-input" />
       </div>
+    </div>
+    <!-- Search -->
+    <div class="glass-card p-3 flex items-center gap-2 flex-1 min-w-[200px]">
+      <iconify-icon icon="solar:magnifer-linear" width="18" style="color:#32EDFF;flex-shrink:0"></iconify-icon>
+      <input type="search" id="stockSearch" placeholder="Search product or category…"
+             class="date-input" style="border:none;background:transparent;box-shadow:none;width:100%;padding:0"
+             oninput="filterStockRows()" />
     </div>
     <div class="glass-card p-3 px-4 flex items-center gap-2 text-sm text-white/50">
       <iconify-icon icon="solar:calculator-linear" width="16" style="color:#32EDFF"></iconify-icon>
@@ -226,9 +233,19 @@ document.getElementById('saveAllBtn').addEventListener('click', async () => {
 });
 
 document.getElementById('stockDate').addEventListener('change', loadStock);
-
 document.getElementById('stockDate').value = new Date().toISOString().split('T')[0];
 loadStock();
+
+/* ── Search / filter stock rows ── */
+function filterStockRows() {
+  const q = (document.getElementById('stockSearch').value || '').toLowerCase().trim();
+  document.querySelectorAll('#stockBody tr[data-product-id]').forEach(tr => {
+    if (!q) { tr.style.display = ''; return; }
+    const name = (tr.querySelector('td:first-child')?.textContent || '').toLowerCase();
+    const cat  = (tr.querySelector('td:nth-child(2)')?.textContent || '').toLowerCase();
+    tr.style.display = (name.includes(q) || cat.includes(q)) ? '' : 'none';
+  });
+}
 </script>
 
 <script>
