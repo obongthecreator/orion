@@ -214,13 +214,20 @@ function updateClock() {
 setInterval(updateClock, 1000); updateClock();
 
 if (navigator.geolocation) {
-  navigator.geolocation.getCurrentPosition(async pos => {
-    try {
-      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`);
-      const d = await r.json();
-      document.getElementById('userLocation').textContent = d.address?.city || d.address?.town || 'Nsukka, Enugu';
-    } catch(e) { document.getElementById('userLocation').textContent = 'Nsukka, Enugu'; }
-  }, () => { document.getElementById('userLocation').textContent = 'Nsukka, Enugu'; });
+  function updateProfileLocation(pos) {
+    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`)
+      .then(r=>r.json())
+      .then(d=>{
+        const a = d.address||{};
+        const place = a.suburb||a.neighbourhood||a.village||a.town||a.city||a.county||'';
+        const state = a.state||'';
+        document.getElementById('userLocation').textContent = place ? (state ? place+', '+state : place) : (state||'Nsukka, Enugu');
+      })
+      .catch(()=>{ document.getElementById('userLocation').textContent='Nsukka, Enugu'; });
+  }
+  navigator.geolocation.watchPosition(updateProfileLocation, ()=>{ document.getElementById('userLocation').textContent='Nsukka, Enugu'; }, {enableHighAccuracy:true,maximumAge:30000,timeout:10000});
+} else {
+  document.getElementById('userLocation').textContent='Nsukka, Enugu';
 }
 </script>
 </body>

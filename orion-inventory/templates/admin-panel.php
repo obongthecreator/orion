@@ -345,9 +345,9 @@ function renderCategoryList(containerId, cats) {
   const el = document.getElementById(containerId);
   if (!cats.length) { el.innerHTML='<p class="text-white/30 text-sm text-center py-2">No categories yet</p>'; return; }
   el.innerHTML = cats.map(c=>`
-    <div class="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2">
+    <div class="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2" data-cat-id="${c.id}">
       <span class="text-white text-sm">${escHtml(c.name)}</span>
-      <button class="btn-danger py-1 px-3 text-xs" onclick="deleteCategory(${c.id})">Delete</button>
+      <button class="btn-danger py-1 px-3 text-xs" onclick="deleteCategory(${c.id},this)">Delete</button>
     </div>`).join('');
 }
 
@@ -364,18 +364,56 @@ async function addCategory(type) {
   const inp = document.getElementById(type==='sales'?'newSalesCat':'newRepairsCat');
   const name = inp.value.trim();
   if(!name) return showToast('Enter category name', false);
-  const r = await fetch(API+'/categories', {method:'POST', headers, body:JSON.stringify({name, type})});
-  const d = await r.json();
-  if(d.success){ inp.value=''; loadCategories(); showToast('Category added!'); }
-  else showToast(d.message||'Error', false);
+  const listId = type==='sales' ? 'salesCatList' : 'repairsCatList';
+  const listEl = document.getElementById(listId);
+
+  // Optimistic: clear placeholder, inject row immediately
+  const tempId = 'tmpcat_'+Date.now();
+  const empty = listEl.querySelector('p');
+  if(empty) listEl.innerHTML='';
+  listEl.insertAdjacentHTML('beforeend',
+    `<div id="${tempId}" class="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 opacity-50">
+       <span class="text-white text-sm">${escHtml(name)}</span>
+       <span class="text-white/30 text-xs italic">saving…</span>
+     </div>`);
+  inp.value = '';
+
+  try {
+    const r = await fetch(API+'/categories', {method:'POST', headers, body:JSON.stringify({name, type})});
+    const d = await r.json();
+    const tempEl = document.getElementById(tempId);
+    if(d.success){
+      if(tempEl) tempEl.outerHTML =
+        `<div class="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2" data-cat-id="${d.id}">
+           <span class="text-white text-sm">${escHtml(name)}</span>
+           <button class="btn-danger py-1 px-3 text-xs" onclick="deleteCategory(${d.id},this)">Delete</button>
+         </div>`;
+      showToast('Category added!');
+      // sync dropdown in background
+      loadCategories();
+    } else {
+      if(tempEl) tempEl.remove();
+      inp.value = name;
+      showToast(d.message||'Error', false);
+    }
+  } catch(_){
+    const tempEl = document.getElementById(tempId);
+    if(tempEl) tempEl.remove();
+    inp.value = name;
+    showToast('Network error', false);
+  }
 }
 
-async function deleteCategory(id) {
+async function deleteCategory(id, btn) {
   if(!confirm('Delete this category? Products under it may be affected.')) return;
-  const r = await fetch(API+'/categories/'+id, {method:'DELETE', headers});
-  const d = await r.json();
-  if(d.success){ loadCategories(); showToast('Deleted!'); }
-  else showToast(d.message||'Error', false);
+  const row = btn ? btn.closest('[data-cat-id]') : document.querySelector(`[data-cat-id="${id}"]`);
+  if(row) row.remove();
+  try {
+    const r = await fetch(API+'/categories/'+id, {method:'DELETE', headers});
+    const d = await r.json();
+    if(d.success){ showToast('Deleted!'); loadCategories(); }
+    else { showToast(d.message||'Error', false); loadCategories(); }
+  } catch(_){ showToast('Network error', false); loadCategories(); }
 }
 
 // ---- PRODUCTS ----
@@ -386,17 +424,20 @@ async function loadProducts() {
   const d = await r.json();
   const tbody = document.getElementById('productTableBody');
   if(!d.success||!d.data.length){ tbody.innerHTML='<tr><td colspan="5" class="text-center text-white/40 py-8">No products found</td></tr>'; return; }
-  tbody.innerHTML = d.data.map(p=>`
-    <tr>
-      <td class="font-medium">${escHtml(p.name)}</td>
-      <td>${escHtml(p.category_name||p.category||'-')}</td>
-      <td class="font-inter font-bold text-[#32EDFF]">₦${Number(p.price).toLocaleString('en-NG')}</td>
-      <td><span class="badge badge-${p.type}">${p.type}</span></td>
-      <td class="flex gap-2">
-        <button class="btn-edit" onclick="openEditProduct(${p.id},'${escAttr(p.name)}',${p.price})">Edit</button>
-        <button class="btn-danger" onclick="deleteProduct(${p.id})">Delete</button>
-      </td>
-    </tr>`).join('');
+  tbody.innerHTML = d.data.map(p=>productRow(p)).join('');
+}
+
+function productRow(p) {
+  return `<tr data-prod-id="${p.id}">
+    <td class="font-medium">${escHtml(p.name)}</td>
+    <td>${escHtml(p.category_name||p.category||'-')}</td>
+    <td class="font-inter font-bold text-[#32EDFF]">₦${Number(p.price).toLocaleString('en-NG')}</td>
+    <td><span class="badge badge-${p.type}">${p.type}</span></td>
+    <td class="flex gap-2">
+      <button class="btn-edit" onclick="openEditProduct(${p.id},'${escAttr(p.name)}',${p.price})">Edit</button>
+      <button class="btn-danger" onclick="deleteProduct(${p.id},this)">Delete</button>
+    </td>
+  </tr>`;
 }
 
 async function addProduct() {
@@ -405,10 +446,38 @@ async function addProduct() {
   const price = document.getElementById('newProdPrice').value;
   const type = document.getElementById('newProdType').value;
   if(!name||!price) return showToast('Fill name and price', false);
-  const r = await fetch(API+'/products', {method:'POST', headers, body:JSON.stringify({name, category_id:cat||null, price:parseFloat(price), type})});
-  const d = await r.json();
-  if(d.success){ document.getElementById('newProdName').value=''; document.getElementById('newProdPrice').value=''; loadProducts(); showToast('Product added!'); }
-  else showToast(d.message||'Error', false);
+
+  // Optimistic: add placeholder row immediately
+  const tempId = 'tmpprod_'+Date.now();
+  const tbody = document.getElementById('productTableBody');
+  const empty = tbody.querySelector('td[colspan]');
+  if(empty) tbody.innerHTML='';
+  tbody.insertAdjacentHTML('beforeend',
+    `<tr id="${tempId}" style="opacity:0.5">
+       <td class="font-medium">${escHtml(name)}</td>
+       <td>-</td>
+       <td class="font-inter font-bold text-[#32EDFF]">₦${Number(price).toLocaleString('en-NG')}</td>
+       <td><span class="badge badge-${type}">${type}</span></td>
+       <td><span class="text-white/30 text-xs italic">saving…</span></td>
+     </tr>`);
+  document.getElementById('newProdName').value='';
+  document.getElementById('newProdPrice').value='';
+
+  try {
+    const r = await fetch(API+'/products', {method:'POST', headers, body:JSON.stringify({name, category_id:cat||null, price:parseFloat(price), type})});
+    const d = await r.json();
+    const tempEl = document.getElementById(tempId);
+    if(d.success){
+      if(tempEl) tempEl.outerHTML = productRow({id:d.id, name:d.name||name, category_name:'-', price:d.price||price, type:d.type||type});
+      showToast('Product added!');
+    } else {
+      if(tempEl) tempEl.remove();
+      showToast(d.message||'Error', false);
+    }
+  } catch(_){
+    document.getElementById(tempId)?.remove();
+    showToast('Network error', false);
+  }
 }
 
 function openEditProduct(id, name, price) {
@@ -423,18 +492,43 @@ async function saveEditProduct() {
   const name = document.getElementById('editProdName').value.trim();
   const price = parseFloat(document.getElementById('editProdPrice').value);
   if(!name||isNaN(price)) return showToast('Invalid input', false);
-  const r = await fetch(API+'/products/'+id, {method:'PUT', headers, body:JSON.stringify({name, price})});
-  const d = await r.json();
-  if(d.success){ closeModal('editProductModal'); loadProducts(); showToast('Product updated!'); }
-  else showToast(d.message||'Error', false);
+
+  // Optimistic: update row immediately
+  const row = document.querySelector(`[data-prod-id="${id}"]`);
+  let oldName='', oldPrice='';
+  if(row){
+    oldName = row.cells[0].textContent;
+    oldPrice = row.cells[2].textContent;
+    row.cells[0].innerHTML = `<span class="font-medium">${escHtml(name)}</span>`;
+    row.cells[2].innerHTML = `<span class="font-inter font-bold text-[#32EDFF]">₦${price.toLocaleString('en-NG')}</span>`;
+    row.style.opacity='0.6';
+  }
+  closeModal('editProductModal');
+
+  try {
+    const r = await fetch(API+'/products/'+id, {method:'PUT', headers, body:JSON.stringify({name, price})});
+    const d = await r.json();
+    if(d.success){ if(row) row.style.opacity='1'; showToast('Product updated!'); }
+    else {
+      if(row){ row.cells[0].innerHTML=`<span class="font-medium">${escHtml(oldName)}</span>`; row.cells[2].textContent=oldPrice; row.style.opacity='1'; }
+      showToast(d.message||'Error', false);
+    }
+  } catch(_){
+    if(row) row.style.opacity='1';
+    showToast('Network error', false);
+  }
 }
 
-async function deleteProduct(id) {
+async function deleteProduct(id, btn) {
   if(!confirm('Delete this product?')) return;
-  const r = await fetch(API+'/products/'+id, {method:'DELETE', headers});
-  const d = await r.json();
-  if(d.success){ loadProducts(); showToast('Deleted!'); }
-  else showToast(d.message||'Error', false);
+  const row = btn ? btn.closest('[data-prod-id]') : document.querySelector(`[data-prod-id="${id}"]`);
+  if(row) row.remove();
+  try {
+    const r = await fetch(API+'/products/'+id, {method:'DELETE', headers});
+    const d = await r.json();
+    if(d.success){ showToast('Deleted!'); }
+    else { showToast(d.message||'Error', false); loadProducts(); }
+  } catch(_){ showToast('Network error', false); loadProducts(); }
 }
 
 // ---- USERS ----
@@ -445,20 +539,23 @@ async function loadUsers() {
   if(!d.success||!d.data||!d.data.length){
     tbody.innerHTML='<tr><td colspan="6" class="text-center text-white/40 py-8">No users found</td></tr>'; return;
   }
-  tbody.innerHTML = d.data.map(u=>`
-    <tr>
-      <td class="font-semibold">${escHtml(u.full_name||u.username)}</td>
-      <td class="text-white/60">${escHtml(u.username)}</td>
-      <td class="text-white/50 text-xs">${escHtml(u.email||'-')}</td>
-      <td><span class="badge badge-${u.role==='super_admin'?'super':u.role}">${escHtml(u.role.replace(/_/g,' '))}</span></td>
-      <td class="text-white/50 text-xs">${u.created_at?String(u.created_at).split('T')[0]:'-'}</td>
-      <td class="flex gap-2">
-        <button class="btn-edit" onclick="openEditUser(${u.id},'${escAttr(u.full_name||'')}','${escAttr(u.username||'')}','${escAttr(u.email||'')}','${escAttr(u.phone||'')}','${escAttr(u.role||'staff')}')">
-          <iconify-icon icon="solar:pen-linear"></iconify-icon> Edit
-        </button>
-        <button class="btn-danger" onclick="deleteUser(${u.id})">Delete</button>
-      </td>
-    </tr>`).join('');
+  tbody.innerHTML = d.data.map(u=>userRow(u)).join('');
+}
+
+function userRow(u) {
+  return `<tr data-user-id="${u.id}">
+    <td class="font-semibold">${escHtml(u.full_name||u.username)}</td>
+    <td class="text-white/60">${escHtml(u.username)}</td>
+    <td class="text-white/50 text-xs">${escHtml(u.email||'-')}</td>
+    <td><span class="badge badge-${u.role==='super_admin'?'super':u.role}">${escHtml(u.role.replace(/_/g,' '))}</span></td>
+    <td class="text-white/50 text-xs">${u.created_at?String(u.created_at).split('T')[0]:'-'}</td>
+    <td class="flex gap-2">
+      <button class="btn-edit" onclick="openEditUser(${u.id},'${escAttr(u.full_name||'')}','${escAttr(u.username||'')}','${escAttr(u.email||'')}','${escAttr(u.phone||'')}','${escAttr(u.role||'staff')}')">
+        <iconify-icon icon="solar:pen-linear"></iconify-icon> Edit
+      </button>
+      <button class="btn-danger" onclick="deleteUser(${u.id},this)">Delete</button>
+    </td>
+  </tr>`;
 }
 
 async function addUser() {
@@ -469,12 +566,38 @@ async function addUser() {
   const email=document.getElementById('newUserEmail').value.trim();
   const phone=document.getElementById('newUserPhone').value.trim();
   if(!full_name||!username||!password) return showToast('Name, username and password required', false);
-  const r = await fetch(API+'/users', {method:'POST', headers, body:JSON.stringify({full_name, username, password, role, email, phone})});
-  const d = await r.json();
-  if(d.success){
-    ['newUserName','newUserUsername','newUserPassword','newUserEmail','newUserPhone'].forEach(id=>document.getElementById(id).value='');
-    loadUsers(); showToast('User created!');
-  } else showToast(d.message||'Error', false);
+
+  // Optimistic: inject row immediately
+  const tempId = 'tmpuser_'+Date.now();
+  const tbody = document.getElementById('usersTableBody');
+  const empty = tbody.querySelector('td[colspan]');
+  if(empty) tbody.innerHTML='';
+  tbody.insertAdjacentHTML('beforeend',
+    `<tr id="${tempId}" style="opacity:0.5">
+       <td class="font-semibold">${escHtml(full_name)}</td>
+       <td class="text-white/60">${escHtml(username)}</td>
+       <td class="text-white/50 text-xs">${escHtml(email||'-')}</td>
+       <td><span class="badge badge-${role==='super_admin'?'super':role}">${role.replace(/_/g,' ')}</span></td>
+       <td class="text-white/50 text-xs">today</td>
+       <td><span class="text-white/30 text-xs italic">saving…</span></td>
+     </tr>`);
+  ['newUserName','newUserUsername','newUserPassword','newUserEmail','newUserPhone'].forEach(id=>document.getElementById(id).value='');
+
+  try {
+    const r = await fetch(API+'/users', {method:'POST', headers, body:JSON.stringify({full_name, username, password, role, email, phone})});
+    const d = await r.json();
+    const tempEl = document.getElementById(tempId);
+    if(d.success){
+      if(tempEl) tempEl.outerHTML = userRow({id:d.id, full_name, username, email, phone, role, created_at:new Date().toISOString()});
+      showToast('User created!');
+    } else {
+      if(tempEl) tempEl.remove();
+      showToast(d.message||'Error', false);
+    }
+  } catch(_){
+    document.getElementById(tempId)?.remove();
+    showToast('Network error', false);
+  }
 }
 
 function openEditUser(id, fullName, username, email, phone, role) {
@@ -496,12 +619,32 @@ async function saveEditUser() {
   const role     = document.getElementById('editUserRole').value;
   const password = document.getElementById('editUserPassword').value;
   if(!full_name) return showToast('Full name is required', false);
+
+  // Optimistic: update row immediately
+  const row = document.querySelector(`[data-user-id="${id}"]`);
+  const prevHTML = row ? row.innerHTML : null;
+  if(row){
+    row.cells[0].innerHTML = `<span class="font-semibold">${escHtml(full_name)}</span>`;
+    row.cells[2].textContent = email||'-';
+    row.cells[3].innerHTML = `<span class="badge badge-${role==='super_admin'?'super':role}">${role.replace(/_/g,' ')}</span>`;
+    row.style.opacity='0.6';
+  }
+  closeModal('editUserModal');
+
   const body = {full_name, email, phone, role};
   if(password) body.password = password;
-  const r = await fetch(API+'/users/'+id, {method:'PUT', headers, body:JSON.stringify(body)});
-  const d = await r.json();
-  if(d.success){ closeModal('editUserModal'); loadUsers(); showToast('User updated!'); }
-  else showToast(d.message||'Error', false);
+  try {
+    const r = await fetch(API+'/users/'+id, {method:'PUT', headers, body:JSON.stringify(body)});
+    const d = await r.json();
+    if(d.success){ if(row) row.style.opacity='1'; showToast('User updated!'); }
+    else {
+      if(row && prevHTML){ row.innerHTML=prevHTML; row.style.opacity='1'; }
+      showToast(d.message||'Error', false);
+    }
+  } catch(_){
+    if(row) row.style.opacity='1';
+    showToast('Network error', false);
+  }
 }
 
 function toggleEditPw(btn) {
@@ -513,12 +656,16 @@ function toggleEditPw(btn) {
     : '<iconify-icon icon="solar:eye-linear" style="font-size:1.1rem"></iconify-icon>';
 }
 
-async function deleteUser(id) {
+async function deleteUser(id, btn) {
   if(!confirm('Delete this user? This cannot be undone.')) return;
-  const r = await fetch(API+'/users/'+id, {method:'DELETE', headers});
-  const d = await r.json();
-  if(d.success){ loadUsers(); showToast('User deleted!'); }
-  else showToast(d.message||'Error', false);
+  const row = btn ? btn.closest('[data-user-id]') : document.querySelector(`[data-user-id="${id}"]`);
+  if(row) row.remove();
+  try {
+    const r = await fetch(API+'/users/'+id, {method:'DELETE', headers});
+    const d = await r.json();
+    if(d.success){ showToast('User deleted!'); }
+    else { showToast(d.message||'Error', false); loadUsers(); }
+  } catch(_){ showToast('Network error', false); loadUsers(); }
 }
 
 function saveSettings() { showToast('Settings saved!'); }
@@ -539,15 +686,25 @@ function updateClock(){
 }
 setInterval(updateClock,1000); updateClock();
 
-if(navigator.geolocation){
-  navigator.geolocation.getCurrentPosition(async pos=>{
-    try{
-      const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`);
-      const d=await r.json();
-      document.getElementById('userLocation').textContent=d.address?.city||d.address?.town||'Nsukka, Enugu';
-    }catch(e){document.getElementById('userLocation').textContent='Nsukka, Enugu';}
-  },()=>{document.getElementById('userLocation').textContent='Nsukka, Enugu';});
-}
+// Real-time location using watchPosition
+(function initLocation(){
+  const locEl = document.getElementById('userLocation');
+  if(!locEl) return;
+  function setLocation(pos){
+    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`)
+      .then(r=>r.json())
+      .then(d=>{
+        const a = d.address||{};
+        const place = a.suburb||a.neighbourhood||a.village||a.town||a.city||a.county||'';
+        const state = a.state||'';
+        locEl.textContent = place ? (state ? place+', '+state : place) : (state||'Nsukka, Enugu');
+      })
+      .catch(()=>{ locEl.textContent='Nsukka, Enugu'; });
+  }
+  if(navigator.geolocation){
+    navigator.geolocation.watchPosition(setLocation, ()=>{ locEl.textContent='Nsukka, Enugu'; }, {enableHighAccuracy:true,maximumAge:30000,timeout:10000});
+  } else { locEl.textContent='Nsukka, Enugu'; }
+})();
 
 // Init
 loadCategories();

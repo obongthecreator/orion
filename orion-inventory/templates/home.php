@@ -250,6 +250,16 @@ $initials     = strtoupper( implode( '', array_map( fn($w) => $w[0], array_slice
         <iconify-icon icon="solar:arrow-right-bold" style="color:rgba(50,237,255,0.4);font-size:1.1rem;position:absolute;right:1.25rem;bottom:1.25rem;"></iconify-icon>
       </a>
 
+      <!-- Profile (all users) -->
+      <a href="/orion/profile" class="nav-card">
+        <div class="icon-wrap"><iconify-icon icon="solar:user-circle-bold" style="color:#32EDFF;font-size:1.6rem;"></iconify-icon></div>
+        <div>
+          <div class="text-white font-bold text-lg leading-tight">Profile</div>
+          <div class="text-sm mt-0.5" style="color:rgba(255,255,255,0.45);">Edit your details &amp; password</div>
+        </div>
+        <iconify-icon icon="solar:arrow-right-bold" style="color:rgba(50,237,255,0.4);font-size:1.1rem;position:absolute;right:1.25rem;bottom:1.25rem;"></iconify-icon>
+      </a>
+
       <?php if ( $is_admin ) : ?>
       <!-- Admin Panel -->
       <a href="/orion/admin-panel" class="nav-card">
