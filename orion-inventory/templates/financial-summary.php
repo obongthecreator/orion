@@ -222,38 +222,38 @@ $user_name    = $current_user['display_name'] ?? $current_user['username'] ?? 'U
         </h2>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-          <!-- Total Sales -->
+          <!-- Cash Sales (auto from sales form) -->
           <div>
-            <label for="total_sales">Total Sales (₦)</label>
+            <label for="cash_sales">Cash Sales (₦) <span style="color:rgba(50,237,255,0.5);font-weight:400;text-transform:none;letter-spacing:0;">— auto from sales</span></label>
             <div class="currency-wrap">
               <span class="prefix">₦</span>
-              <input type="text" id="total_sales" name="total_sales" class="orion-input"
-                     placeholder="0.00" inputmode="decimal"
-                     oninput="formatMoneyInput(this); recalculate();">
+              <input type="text" id="cash_sales" name="cash_sales" class="orion-input"
+                     placeholder="0.00" readonly tabindex="-1">
             </div>
+            <p class="auto-note">= sum of cash payments in sales form</p>
           </div>
 
-          <!-- Transfer / Card Sales -->
+          <!-- Transfer / Card Sales (auto from sales form) -->
           <div>
-            <label for="transfer_card_sales">Transfer / Card Sales (₦)</label>
+            <label for="transfer_card_sales">Transfer / Card Sales (₦) <span style="color:rgba(50,237,255,0.5);font-weight:400;text-transform:none;letter-spacing:0;">— auto from sales</span></label>
             <div class="currency-wrap">
               <span class="prefix">₦</span>
               <input type="text" id="transfer_card_sales" name="transfer_card_sales" class="orion-input"
-                     placeholder="0.00" inputmode="decimal"
-                     oninput="formatMoneyInput(this); recalculate();">
+                     placeholder="0.00" readonly tabindex="-1">
             </div>
+            <p class="auto-note">= sum of transfer/card payments in sales form</p>
           </div>
         </div>
 
-        <!-- Cash Sales (auto) -->
+        <!-- Total Sales (auto calculated) -->
         <div class="mb-4">
-          <label for="cash_sales">Cash Sales (₦) <span style="color:rgba(50,237,255,0.5);font-weight:400;text-transform:none;letter-spacing:0;">— auto calculated</span></label>
+          <label for="total_sales">Total Sales (₦) <span style="color:rgba(50,237,255,0.5);font-weight:400;text-transform:none;letter-spacing:0;">— auto calculated</span></label>
           <div class="currency-wrap">
             <span class="prefix">₦</span>
-            <input type="text" id="cash_sales" name="cash_sales" class="orion-input"
+            <input type="text" id="total_sales" name="total_sales" class="orion-input"
                    placeholder="0.00" readonly tabindex="-1">
           </div>
-          <p class="auto-note">= Total Sales − Transfer/Card Sales</p>
+          <p class="auto-note">= Cash Sales + Transfer/Card Sales</p>
         </div>
       </div>
 
@@ -419,11 +419,11 @@ $user_name    = $current_user['display_name'] ?? $current_user['username'] ?? 'U
   }
 
   function recalculate() {
-    const totalSales   = parseNum('total_sales');
+    const cashSales    = parseNum('cash_sales');
     const transferCard = parseNum('transfer_card_sales');
-    const cashSales    = Math.max(0, totalSales - transferCard);
+    const totalSales   = cashSales + transferCard;
 
-    document.getElementById('cash_sales').value = formatNum(cashSales);
+    document.getElementById('total_sales').value = formatNum(totalSales);
 
     const cashLeft = calculateCashLeft();
     document.getElementById('cash_left').value = cashLeft.toFixed(2);
@@ -462,11 +462,11 @@ $user_name    = $current_user['display_name'] ?? $current_user['username'] ?? 'U
       if (liveRes.ok) {
         const liveData = await liveRes.json();
         const totals = liveData.data || liveData;
-        if (totals.total_sales > 0 || totals.transfer_card_sales > 0) {
-          setField('total_sales', totals.total_sales);
-          setField('transfer_card_sales', totals.transfer_card_sales);
-          recalculate();
-        }
+        // Always populate cash_sales and transfer_card_sales from live sales data;
+        // recalculate() will compute total_sales as their sum.
+        setField('cash_sales',          totals.cash_sales          ?? 0);
+        setField('transfer_card_sales', totals.transfer_card_sales ?? 0);
+        recalculate();
       }
     } catch (_) {}
 
@@ -499,7 +499,7 @@ $user_name    = $current_user['display_name'] ?? $current_user['username'] ?? 'U
   }
 
   function populateForm(r) {
-    const fields = ['total_sales','transfer_card_sales','expense','old_cash','debtors_transfer','debtors_cash','discount'];
+    const fields = ['cash_sales','transfer_card_sales','expense','old_cash','debtors_transfer','debtors_cash','discount'];
     fields.forEach(f => setField(f, r[f] ?? 0));
     const remarksEl = document.getElementById('expense_remarks');
     if (remarksEl) remarksEl.value = r.expense_remarks || '';
