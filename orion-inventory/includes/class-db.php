@@ -283,6 +283,13 @@ class Orion_DB {
 		);
 	}
 
+	public static function delete_user( $id ) {
+		global $wpdb;
+		// Also clear their sessions.
+		$wpdb->delete( self::table('sessions'), [ 'user_id' => (int) $id ] );
+		return $wpdb->delete( self::table('users'), [ 'id' => (int) $id ] );
+	}
+
 	// -------------------------------------------------------------------------
 	// Categories
 	// -------------------------------------------------------------------------

@@ -188,7 +188,7 @@ $initials   = strtoupper( implode( '', array_map( fn($w) => $w[0], array_slice( 
       <h3 class="text-white font-bold mb-4">Staff &amp; Admins</h3>
       <div class="overflow-x-auto">
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead>
           <tbody id="usersTableBody"><tr><td colspan="5" class="text-center text-white/40 py-8">Loading...</td></tr></tbody>
         </table>
       </div>
@@ -239,6 +239,61 @@ $initials   = strtoupper( implode( '', array_map( fn($w) => $w[0], array_slice( 
     <div class="flex gap-3 mt-6">
       <button class="btn-cyan flex-1" onclick="saveEditProduct()">Save Changes</button>
       <button class="btn-danger" onclick="closeModal('editProductModal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit User Modal -->
+<div class="modal-overlay" id="editUserModal">
+  <div class="modal-box" style="max-width:520px">
+    <h3 class="text-white font-bold text-lg mb-5 flex items-center gap-2">
+      <iconify-icon icon="solar:pen-bold" style="color:#32EDFF"></iconify-icon>Edit User
+    </h3>
+    <input type="hidden" id="editUserId">
+    <div class="grid gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="text-white/60 text-xs uppercase tracking-wider mb-1 block">Full Name</label>
+          <input type="text" id="editUserFullName" class="form-input" placeholder="Full Name">
+        </div>
+        <div>
+          <label class="text-white/60 text-xs uppercase tracking-wider mb-1 block">Username</label>
+          <input type="text" id="editUserUsername" class="form-input opacity-50" readonly>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="text-white/60 text-xs uppercase tracking-wider mb-1 block">Email</label>
+          <input type="email" id="editUserEmail" class="form-input" placeholder="Email">
+        </div>
+        <div>
+          <label class="text-white/60 text-xs uppercase tracking-wider mb-1 block">Phone</label>
+          <input type="tel" id="editUserPhone" class="form-input" placeholder="Phone">
+        </div>
+      </div>
+      <div>
+        <label class="text-white/60 text-xs uppercase tracking-wider mb-1 block">Role</label>
+        <select id="editUserRole" class="form-select">
+          <option value="staff">Staff</option>
+          <option value="admin">Admin</option>
+          <?php if ($is_super): ?><option value="super_admin">Super Admin</option><?php endif; ?>
+        </select>
+      </div>
+      <div>
+        <label class="text-white/60 text-xs uppercase tracking-wider mb-1 block">New Password <span class="text-white/30 normal-case">(leave blank to keep current)</span></label>
+        <div class="relative">
+          <input type="password" id="editUserPassword" class="form-input pr-12" placeholder="New password">
+          <button type="button" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;position:absolute;right:0.75rem;top:50%;transform:translateY(-50%);" onclick="toggleEditPw(this)">
+            <iconify-icon icon="solar:eye-linear" style="font-size:1.1rem"></iconify-icon>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="flex gap-3 mt-6">
+      <button class="btn-cyan flex-1" onclick="saveEditUser()">
+        <iconify-icon icon="solar:diskette-linear" class="mr-1"></iconify-icon>Save Changes
+      </button>
+      <button class="btn-danger" onclick="closeModal('editUserModal')">Cancel</button>
     </div>
   </div>
 </div>
@@ -387,14 +442,22 @@ async function loadUsers() {
   const r = await fetch(API+'/users', {headers});
   const d = await r.json();
   const tbody = document.getElementById('usersTableBody');
-  if(!d.success||!d.data.length){ tbody.innerHTML='<tr><td colspan="5" class="text-center text-white/40 py-8">No users</td></tr>'; return; }
+  if(!d.success||!d.data||!d.data.length){
+    tbody.innerHTML='<tr><td colspan="6" class="text-center text-white/40 py-8">No users found</td></tr>'; return;
+  }
   tbody.innerHTML = d.data.map(u=>`
     <tr>
       <td class="font-semibold">${escHtml(u.full_name||u.username)}</td>
       <td class="text-white/60">${escHtml(u.username)}</td>
-      <td><span class="badge badge-${u.role==='super_admin'?'super':u.role}">${escHtml(u.role.replace('_',' '))}</span></td>
-      <td class="text-white/50 text-xs">${u.created_at?u.created_at.split('T')[0]:'-'}</td>
-      <td><button class="btn-danger" onclick="deleteUser(${u.id})">Delete</button></td>
+      <td class="text-white/50 text-xs">${escHtml(u.email||'-')}</td>
+      <td><span class="badge badge-${u.role==='super_admin'?'super':u.role}">${escHtml(u.role.replace(/_/g,' '))}</span></td>
+      <td class="text-white/50 text-xs">${u.created_at?String(u.created_at).split('T')[0]:'-'}</td>
+      <td class="flex gap-2">
+        <button class="btn-edit" onclick="openEditUser(${u.id},'${escAttr(u.full_name||'')}','${escAttr(u.username||'')}','${escAttr(u.email||'')}','${escAttr(u.phone||'')}','${escAttr(u.role||'staff')}')">
+          <iconify-icon icon="solar:pen-linear"></iconify-icon> Edit
+        </button>
+        <button class="btn-danger" onclick="deleteUser(${u.id})">Delete</button>
+      </td>
     </tr>`).join('');
 }
 
@@ -412,6 +475,42 @@ async function addUser() {
     ['newUserName','newUserUsername','newUserPassword','newUserEmail','newUserPhone'].forEach(id=>document.getElementById(id).value='');
     loadUsers(); showToast('User created!');
   } else showToast(d.message||'Error', false);
+}
+
+function openEditUser(id, fullName, username, email, phone, role) {
+  document.getElementById('editUserId').value = id;
+  document.getElementById('editUserFullName').value = fullName;
+  document.getElementById('editUserUsername').value = username;
+  document.getElementById('editUserEmail').value = email;
+  document.getElementById('editUserPhone').value = phone;
+  document.getElementById('editUserRole').value = role;
+  document.getElementById('editUserPassword').value = '';
+  document.getElementById('editUserModal').classList.add('show');
+}
+
+async function saveEditUser() {
+  const id       = document.getElementById('editUserId').value;
+  const full_name= document.getElementById('editUserFullName').value.trim();
+  const email    = document.getElementById('editUserEmail').value.trim();
+  const phone    = document.getElementById('editUserPhone').value.trim();
+  const role     = document.getElementById('editUserRole').value;
+  const password = document.getElementById('editUserPassword').value;
+  if(!full_name) return showToast('Full name is required', false);
+  const body = {full_name, email, phone, role};
+  if(password) body.password = password;
+  const r = await fetch(API+'/users/'+id, {method:'PUT', headers, body:JSON.stringify(body)});
+  const d = await r.json();
+  if(d.success){ closeModal('editUserModal'); loadUsers(); showToast('User updated!'); }
+  else showToast(d.message||'Error', false);
+}
+
+function toggleEditPw(btn) {
+  const inp = document.getElementById('editUserPassword');
+  const show = inp.type==='password';
+  inp.type = show ? 'text' : 'password';
+  btn.innerHTML = show
+    ? '<iconify-icon icon="solar:eye-closed-linear" style="font-size:1.1rem"></iconify-icon>'
+    : '<iconify-icon icon="solar:eye-linear" style="font-size:1.1rem"></iconify-icon>';
 }
 
 async function deleteUser(id) {

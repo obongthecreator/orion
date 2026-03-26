@@ -118,9 +118,19 @@ class Orion_API {
 			[ 'methods' => 'POST', 'callback' => [ $this, 'create_user' ], 'permission_callback' => [ $this, 'check_admin' ] ],
 		] );
 		register_rest_route( $ns, '/users/(?P<id>\d+)', [
-			'methods'             => 'PUT',
-			'callback'            => [ $this, 'update_user' ],
+			[ 'methods' => 'PUT',    'callback' => [ $this, 'update_user' ],  'permission_callback' => [ $this, 'check_auth' ] ],
+			[ 'methods' => 'DELETE', 'callback' => [ $this, 'delete_user' ],  'permission_callback' => [ $this, 'check_admin' ] ],
+		] );
+
+		// Profile — current user CRUD
+		register_rest_route( $ns, '/me', [
+			'methods'             => 'GET',
+			'callback'            => [ $this, 'get_me' ],
 			'permission_callback' => [ $this, 'check_auth' ],
+		] );
+		register_rest_route( $ns, '/profile', [
+			[ 'methods' => 'GET',  'callback' => [ $this, 'get_me' ],          'permission_callback' => [ $this, 'check_auth' ] ],
+			[ 'methods' => 'POST', 'callback' => [ $this, 'update_profile' ],  'permission_callback' => [ $this, 'check_auth' ] ],
 		] );
 
 		// Profile picture
@@ -128,6 +138,13 @@ class Orion_API {
 			'methods'             => 'POST',
 			'callback'            => [ $this, 'upload_profile_picture' ],
 			'permission_callback' => [ $this, 'check_auth' ],
+		] );
+
+		// Analytics
+		register_rest_route( $ns, '/analytics', [
+			'methods'             => 'GET',
+			'callback'            => [ $this, 'get_analytics' ],
+			'permission_callback' => [ $this, 'check_admin' ],
 		] );
 	}
 
@@ -183,7 +200,7 @@ class Orion_API {
 	public function get_categories( WP_REST_Request $request ) {
 		$type = $request->get_param( 'type' );
 		$data = $type ? Orion_DB::get_categories_by_type( $type ) : Orion_DB::get_all_categories();
-		return new WP_REST_Response( $data, 200 );
+		return new WP_REST_Response( [ 'success' => true, 'data' => $data ], 200 );
 	}
 
 	public function create_category( WP_REST_Request $request ) {
@@ -191,11 +208,11 @@ class Orion_API {
 		$type = sanitize_text_field( $request->get_param( 'type' ) ?? 'sales' );
 
 		if ( ! $name ) {
-			return new WP_REST_Response( [ 'message' => 'Category name is required' ], 400 );
+			return new WP_REST_Response( [ 'success' => false, 'message' => 'Category name is required' ], 400 );
 		}
 
 		$id = Orion_DB::insert_category( compact( 'name', 'type' ) );
-		return new WP_REST_Response( [ 'id' => $id, 'name' => $name, 'type' => $type ], 201 );
+		return new WP_REST_Response( [ 'success' => true, 'id' => $id, 'name' => $name, 'type' => $type ], 201 );
 	}
 
 	public function delete_category( WP_REST_Request $request ) {
@@ -218,7 +235,8 @@ class Orion_API {
 			$data = Orion_DB::get_all_products( $type ?: null );
 		}
 
-		return new WP_REST_Response( $data, 200 );
+		// Support both raw-array consumers (sales form) and {success,data} consumers (admin panel).
+		return new WP_REST_Response( [ 'success' => true, 'data' => $data ], 200 );
 	}
 
 	public function create_product( WP_REST_Request $request ) {
@@ -230,11 +248,11 @@ class Orion_API {
 		];
 
 		if ( ! $data['name'] ) {
-			return new WP_REST_Response( [ 'message' => 'Product name is required' ], 400 );
+			return new WP_REST_Response( [ 'success' => false, 'message' => 'Product name is required' ], 400 );
 		}
 
 		$id = Orion_DB::insert_product( $data );
-		return new WP_REST_Response( array_merge( [ 'id' => $id ], $data ), 201 );
+		return new WP_REST_Response( array_merge( [ 'success' => true, 'id' => $id ], $data ), 201 );
 	}
 
 	public function update_product( WP_REST_Request $request ) {
@@ -394,18 +412,18 @@ class Orion_API {
 		$limit  = (int) ( $request->get_param( 'limit' )  ?? 50 );
 		$offset = (int) ( $request->get_param( 'offset' ) ?? 0 );
 		$data   = Orion_DB::get_credit_sales( $limit, $offset );
-		return new WP_REST_Response( $data, 200 );
+		return new WP_REST_Response( [ 'success' => true, 'data' => $data ], 200 );
 	}
 
 	public function get_credit_history( WP_REST_Request $request ) {
 		$whatsapp = sanitize_text_field( $request->get_param( 'whatsapp' ) ?? '' );
 
 		if ( ! $whatsapp ) {
-			return new WP_REST_Response( [ 'message' => 'WhatsApp number is required' ], 400 );
+			return new WP_REST_Response( [ 'success' => false, 'message' => 'WhatsApp number is required' ], 400 );
 		}
 
 		$data = Orion_DB::get_customer_credit_history( $whatsapp );
-		return new WP_REST_Response( $data, 200 );
+		return new WP_REST_Response( [ 'success' => true, 'data' => $data ], 200 );
 	}
 
 	public function update_credit_payment( WP_REST_Request $request ) {
@@ -525,7 +543,8 @@ class Orion_API {
 	// -------------------------------------------------------------------------
 
 	public function get_users( WP_REST_Request $request ) {
-		return new WP_REST_Response( Orion_DB::get_all_users(), 200 );
+		$users = Orion_DB::get_all_users();
+		return new WP_REST_Response( [ 'success' => true, 'data' => $users ], 200 );
 	}
 
 	public function create_user( WP_REST_Request $request ) {
@@ -533,11 +552,11 @@ class Orion_API {
 		$password = $request->get_param( 'password' ) ?? '';
 
 		if ( ! $username || ! $password ) {
-			return new WP_REST_Response( [ 'message' => 'Username and password are required' ], 400 );
+			return new WP_REST_Response( [ 'success' => false, 'message' => 'Username and password are required' ], 400 );
 		}
 
 		if ( Orion_DB::get_user_by_username( $username ) ) {
-			return new WP_REST_Response( [ 'message' => 'Username already exists' ], 409 );
+			return new WP_REST_Response( [ 'success' => false, 'message' => 'Username already exists' ], 409 );
 		}
 
 		$data = [
@@ -550,7 +569,7 @@ class Orion_API {
 		];
 
 		$id = Orion_DB::insert_user( $data );
-		return new WP_REST_Response( [ 'id' => $id ], 201 );
+		return new WP_REST_Response( [ 'success' => true, 'id' => $id ], 201 );
 	}
 
 	public function update_user( WP_REST_Request $request ) {
@@ -559,7 +578,7 @@ class Orion_API {
 
 		// Non-admin users can only update their own profile.
 		if ( ! in_array( $current_user->role, [ 'admin', 'super_admin' ], true ) && (int) $current_user->id !== $target_id ) {
-			return new WP_REST_Response( [ 'message' => 'Forbidden' ], 403 );
+			return new WP_REST_Response( [ 'success' => false, 'message' => 'Forbidden' ], 403 );
 		}
 
 		$data = array_filter(
@@ -574,13 +593,90 @@ class Orion_API {
 					? sanitize_text_field( $request->get_param( 'role' ) )
 					: null,
 			],
-			function ( $v ) {
-				return $v !== null;
-			}
+			fn( $v ) => $v !== null
 		);
 
 		Orion_DB::update_user( $target_id, $data );
 		return new WP_REST_Response( [ 'success' => true ], 200 );
+	}
+
+	public function delete_user( WP_REST_Request $request ) {
+		$current_user = $this->get_request_user( $request );
+		$target_id    = (int) $request->get_param( 'id' );
+
+		// Prevent self-deletion.
+		if ( (int) $current_user->id === $target_id ) {
+			return new WP_REST_Response( [ 'success' => false, 'message' => 'You cannot delete your own account' ], 403 );
+		}
+
+		// Only super_admin can delete another admin/super_admin.
+		$target = Orion_DB::get_user_by_id( $target_id );
+		if ( $target && in_array( $target->role, [ 'admin', 'super_admin' ], true )
+			&& $current_user->role !== 'super_admin' ) {
+			return new WP_REST_Response( [ 'success' => false, 'message' => 'Only super admins can delete admin accounts' ], 403 );
+		}
+
+		Orion_DB::delete_user( $target_id );
+		return new WP_REST_Response( [ 'success' => true ], 200 );
+	}
+
+	// -------------------------------------------------------------------------
+	// Profile (current user)
+	// -------------------------------------------------------------------------
+
+	public function get_me( WP_REST_Request $request ) {
+		$user = $this->get_request_user( $request );
+		if ( ! $user ) {
+			return new WP_REST_Response( [ 'success' => false, 'message' => 'Unauthenticated' ], 401 );
+		}
+		return new WP_REST_Response( [
+			'success'     => true,
+			'id'          => (int) $user->id,
+			'username'    => $user->username,
+			'full_name'   => $user->full_name,
+			'email'       => $user->email,
+			'phone'       => $user->phone,
+			'address'     => $user->address,
+			'role'        => $user->role,
+			'profile_pic' => $user->profile_pic,
+		], 200 );
+	}
+
+	public function update_profile( WP_REST_Request $request ) {
+		$user = $this->get_request_user( $request );
+		if ( ! $user ) {
+			return new WP_REST_Response( [ 'success' => false, 'message' => 'Unauthenticated' ], 401 );
+		}
+
+		$data = array_filter(
+			[
+				'full_name' => $request->get_param( 'full_name' ) !== null ? sanitize_text_field( $request->get_param( 'full_name' ) ) : null,
+				'email'     => $request->get_param( 'email' )     !== null ? sanitize_email( $request->get_param( 'email' ) ) : null,
+				'phone'     => $request->get_param( 'phone' )     !== null ? sanitize_text_field( $request->get_param( 'phone' ) ) : null,
+				'address'   => $request->get_param( 'address' )   !== null ? sanitize_textarea_field( $request->get_param( 'address' ) ) : null,
+			],
+			fn( $v ) => $v !== null
+		);
+
+		// Password change with current-password verification.
+		$new_password     = $request->get_param( 'new_password' ) ?? '';
+		$current_password = $request->get_param( 'current_password' ) ?? '';
+
+		if ( $new_password ) {
+			if ( ! $current_password ) {
+				return new WP_REST_Response( [ 'success' => false, 'message' => 'Current password is required' ], 400 );
+			}
+			if ( ! wp_check_password( $current_password, $user->password_hash ) ) {
+				return new WP_REST_Response( [ 'success' => false, 'message' => 'Current password is incorrect' ], 403 );
+			}
+			$data['password'] = $new_password;
+		}
+
+		if ( ! empty( $data ) ) {
+			Orion_DB::update_user( (int) $user->id, $data );
+		}
+
+		return new WP_REST_Response( [ 'success' => true, 'message' => 'Profile updated successfully' ], 200 );
 	}
 
 	// -------------------------------------------------------------------------
@@ -591,7 +687,7 @@ class Orion_API {
 		$user = $this->get_request_user( $request );
 
 		if ( ! isset( $_FILES['picture'] ) ) {
-			return new WP_REST_Response( [ 'message' => 'No file uploaded' ], 400 );
+			return new WP_REST_Response( [ 'success' => false, 'message' => 'No file uploaded' ], 400 );
 		}
 
 		$file = $_FILES['picture']; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
@@ -599,7 +695,7 @@ class Orion_API {
 		// Validate file size (max 5 MB).
 		$max_size = 5 * 1024 * 1024;
 		if ( $file['size'] > $max_size ) {
-			return new WP_REST_Response( [ 'message' => 'File size exceeds the 5 MB limit' ], 400 );
+			return new WP_REST_Response( [ 'success' => false, 'message' => 'File size exceeds the 5 MB limit' ], 400 );
 		}
 
 		// Validate MIME type — allow only common image formats.
@@ -607,7 +703,7 @@ class Orion_API {
 		$file_type          = wp_check_filetype_and_ext( $file['tmp_name'], $file['name'] );
 
 		if ( empty( $file_type['type'] ) || ! in_array( $file_type['type'], $allowed_mime_types, true ) ) {
-			return new WP_REST_Response( [ 'message' => 'Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed' ], 400 );
+			return new WP_REST_Response( [ 'success' => false, 'message' => 'Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed' ], 400 );
 		}
 
 		if ( ! function_exists( 'wp_handle_upload' ) ) {
@@ -618,12 +714,147 @@ class Orion_API {
 		$uploaded  = wp_handle_upload( $file, $overrides );
 
 		if ( isset( $uploaded['error'] ) ) {
-			return new WP_REST_Response( [ 'message' => $uploaded['error'] ], 400 );
+			return new WP_REST_Response( [ 'success' => false, 'message' => $uploaded['error'] ], 400 );
 		}
 
 		Orion_DB::update_user( $user->id, [ 'profile_pic' => $uploaded['url'] ] );
 
-		return new WP_REST_Response( [ 'url' => $uploaded['url'] ], 200 );
+		return new WP_REST_Response( [ 'success' => true, 'url' => $uploaded['url'] ], 200 );
+	}
+
+	// -------------------------------------------------------------------------
+	// Analytics
+	// -------------------------------------------------------------------------
+
+	public function get_analytics( WP_REST_Request $request ) {
+		global $wpdb;
+
+		$period = sanitize_text_field( $request->get_param( 'period' ) ?? 'today' );
+
+		switch ( $period ) {
+			case 'week':
+				$start = gmdate( 'Y-m-d', strtotime( 'monday this week' ) );
+				$end   = gmdate( 'Y-m-d', strtotime( 'sunday this week' ) );
+				$prev_start = gmdate( 'Y-m-d', strtotime( 'monday last week' ) );
+				$prev_end   = gmdate( 'Y-m-d', strtotime( 'sunday last week' ) );
+				break;
+			case 'month':
+				$start = gmdate( 'Y-m-01' );
+				$end   = gmdate( 'Y-m-t' );
+				$prev_start = gmdate( 'Y-m-01', strtotime( 'first day of last month' ) );
+				$prev_end   = gmdate( 'Y-m-t', strtotime( 'last day of last month' ) );
+				break;
+			case 'year':
+				$start = gmdate( 'Y-01-01' );
+				$end   = gmdate( 'Y-12-31' );
+				$prev_start = gmdate( 'Y-01-01', strtotime( '-1 year' ) );
+				$prev_end   = gmdate( 'Y-12-31', strtotime( '-1 year' ) );
+				break;
+			default: // today
+				$start = $end = gmdate( 'Y-m-d' );
+				$prev_start = $prev_end = gmdate( 'Y-m-d', strtotime( '-1 day' ) );
+		}
+
+		$sales_t = $wpdb->prefix . 'orion_sales';
+		$items_t = $wpdb->prefix . 'orion_sale_items';
+
+		// Total revenue in period.
+		$revenue = (float) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COALESCE(SUM(total_amount),0) FROM {$sales_t} WHERE order_date BETWEEN %s AND %s",
+			$start, $end
+		) );
+
+		// Prev period revenue.
+		$prev_revenue = (float) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COALESCE(SUM(total_amount),0) FROM {$sales_t} WHERE order_date BETWEEN %s AND %s",
+			$prev_start, $prev_end
+		) );
+
+		// Total orders.
+		$orders = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$sales_t} WHERE order_date BETWEEN %s AND %s",
+			$start, $end
+		) );
+
+		// Average order value.
+		$avg_order = $orders > 0 ? round( $revenue / $orders, 2 ) : 0;
+
+		// Revenue by payment method.
+		$by_method = $wpdb->get_results( $wpdb->prepare(
+			"SELECT payment_method, SUM(total_amount) AS total FROM {$sales_t}
+			 WHERE order_date BETWEEN %s AND %s GROUP BY payment_method",
+			$start, $end
+		), ARRAY_A );
+
+		// Top selling products.
+		$top_products = $wpdb->get_results( $wpdb->prepare(
+			"SELECT si.product_name, SUM(si.quantity) AS qty_sold, SUM(si.total) AS revenue
+			 FROM {$items_t} si
+			 JOIN {$sales_t} s ON si.sale_id = s.id
+			 WHERE s.order_date BETWEEN %s AND %s
+			 GROUP BY si.product_name ORDER BY qty_sold DESC LIMIT 5",
+			$start, $end
+		), ARRAY_A );
+
+		// Least selling products.
+		$least_products = $wpdb->get_results( $wpdb->prepare(
+			"SELECT si.product_name, SUM(si.quantity) AS qty_sold, SUM(si.total) AS revenue
+			 FROM {$items_t} si
+			 JOIN {$sales_t} s ON si.sale_id = s.id
+			 WHERE s.order_date BETWEEN %s AND %s
+			 GROUP BY si.product_name ORDER BY qty_sold ASC LIMIT 5",
+			$start, $end
+		), ARRAY_A );
+
+		// Daily revenue trend (last 7 days regardless of period, for chart).
+		$daily_trend = $wpdb->get_results( $wpdb->prepare(
+			"SELECT order_date AS date, SUM(total_amount) AS revenue, COUNT(*) AS orders
+			 FROM {$sales_t}
+			 WHERE order_date >= %s
+			 GROUP BY order_date ORDER BY order_date ASC",
+			gmdate( 'Y-m-d', strtotime( '-6 days' ) )
+		), ARRAY_A );
+
+		// Category breakdown.
+		$category_breakdown = $wpdb->get_results( $wpdb->prepare(
+			"SELECT si.category_name, SUM(si.quantity) AS qty_sold, SUM(si.total) AS revenue
+			 FROM {$items_t} si
+			 JOIN {$sales_t} s ON si.sale_id = s.id
+			 WHERE s.order_date BETWEEN %s AND %s
+			 GROUP BY si.category_name ORDER BY revenue DESC",
+			$start, $end
+		), ARRAY_A );
+
+		// Repairs count & revenue.
+		$repairs_t   = $wpdb->prefix . 'orion_repairs';
+		$repairs_rev = (float) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COALESCE(SUM(total),0) FROM {$repairs_t} WHERE DATE(created_at) BETWEEN %s AND %s",
+			$start, $end
+		) );
+		$repairs_cnt = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$repairs_t} WHERE DATE(created_at) BETWEEN %s AND %s",
+			$start, $end
+		) );
+
+		return new WP_REST_Response( [
+			'success'            => true,
+			'period'             => $period,
+			'start'              => $start,
+			'end'                => $end,
+			'revenue'            => $revenue,
+			'prev_revenue'       => $prev_revenue,
+			'revenue_change_pct' => $prev_revenue > 0 ? round( ( ( $revenue - $prev_revenue ) / $prev_revenue ) * 100, 1 ) : null,
+			'orders'             => $orders,
+			'avg_order'          => $avg_order,
+			'repairs_revenue'    => $repairs_rev,
+			'repairs_count'      => $repairs_cnt,
+			'total_combined'     => $revenue + $repairs_rev,
+			'by_method'          => $by_method,
+			'top_products'       => $top_products,
+			'least_products'     => $least_products,
+			'daily_trend'        => $daily_trend,
+			'category_breakdown' => $category_breakdown,
+		], 200 );
 	}
 
 	// -------------------------------------------------------------------------

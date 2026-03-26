@@ -678,7 +678,7 @@ $user_role    = $current_user['role'] ?? 'staff';
     try {
       const r = await fetch(`${BASE}/products`);
       const d = await r.json();
-      products = Array.isArray(d) ? d : (d.products || []);
+      products = Array.isArray(d) ? d : (d.data || d.products || []);
     } catch (_) { products = []; }
   }
 
@@ -914,7 +914,7 @@ $user_role    = $current_user['role'] ?? 'staff';
     try {
       const r = await fetch(`${BASE}/credit-sales`);
       const d = await r.json();
-      allCreditSales = Array.isArray(d) ? d : (d.sales || []);
+      allCreditSales = Array.isArray(d) ? d : (d.data || d.sales || []);
       renderCreditTable(allCreditSales);
     } catch (_) {
       showToast('Could not load credit sales.', 'error');
@@ -1080,7 +1080,7 @@ $user_role    = $current_user['role'] ?? 'staff';
     try {
       const r = await fetch(`${BASE}/credit-history?whatsapp=${encodeURIComponent(whatsapp)}`);
       const d = await r.json();
-      const transactions = Array.isArray(d) ? d : (d.transactions || []);
+      const transactions = Array.isArray(d) ? d : (d.data || d.transactions || []);
       renderHistoryModal(transactions, name, whatsapp);
     } catch (_) {
       document.getElementById('historyModalContent').innerHTML = '<p class="text-center py-6" style="color:#f87171;">Failed to load history.</p>';

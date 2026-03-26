@@ -92,7 +92,7 @@ class Orion_Auth {
 	/**
 	 * Return the user data for the currently authenticated user, or null.
 	 *
-	 * @return object|null
+	 * @return array|null User data as associative array, or null if not authenticated.
 	 */
 	public static function get_current_user() {
 		$token = self::get_token_from_request();
@@ -107,7 +107,24 @@ class Orion_Auth {
 			return null;
 		}
 
-		return Orion_DB::get_user_by_id( $session->user_id );
+		$user = Orion_DB::get_user_by_id( $session->user_id );
+
+		if ( ! $user ) {
+			return null;
+		}
+
+		// Return as array so templates can use array or object-cast access consistently.
+		return [
+			'id'          => (int) $user->id,
+			'username'    => $user->username,
+			'role'        => $user->role,
+			'full_name'   => $user->full_name,
+			'display_name'=> $user->full_name ?: $user->username,
+			'email'       => $user->email,
+			'phone'       => $user->phone,
+			'address'     => $user->address,
+			'profile_pic' => $user->profile_pic,
+		];
 	}
 
 	/**
@@ -135,7 +152,7 @@ class Orion_Auth {
 	public static function require_admin() {
 		$user = self::get_current_user();
 
-		if ( ! $user || ! in_array( $user->role, [ 'admin', 'super_admin' ], true ) ) {
+		if ( ! $user || ! in_array( $user['role'] ?? '', [ 'admin', 'super_admin' ], true ) ) {
 			wp_redirect( home_url( '/orion/home' ) );
 			exit;
 		}
