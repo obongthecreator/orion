@@ -406,6 +406,7 @@ $is_admin     = in_array( $user_role, [ 'admin', 'super_admin' ], true );
    REPAIRS PAGE — VANILLA JS
 ══════════════════════════════════════════════ */
 
+const BASE         = (window.orionConfig && window.orionConfig.baseUrl) ? window.orionConfig.baseUrl : '/wp-json/orion/v1';
 let submitCooldown = false;
 const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const parseNum = v => parseFloat((v || '').toString().replace(/[^\d.]/g, '')) || 0;
@@ -423,7 +424,7 @@ function showToast(msg, type = 'success') {
 /* ── Load categories ── */
 async function loadCategories() {
   try {
-    const res  = await fetch('/wp-json/orion/v1/categories?type=repairs', {
+    const res  = await fetch(`${BASE}/categories?type=repairs`, {
       headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('orion_token') || '') }
     });
     const data = await res.json();
@@ -540,7 +541,7 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
   if (deviceFile) formData.append('device_photo',   deviceFile);
 
   try {
-    const res  = await fetch('/wp-json/orion/v1/repairs', {
+    const res  = await fetch(`${BASE}/repairs`, {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('orion_token') || '') },
       body: formData
@@ -549,7 +550,7 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
 
     if (data.success) {
       showToast('Repair saved successfully!');
-      buildReceipt(data.repair_id);
+      buildReceipt(data.repair_id || data.id);
       document.getElementById('receiptModal').classList.add('open');
     } else {
       showToast(data.message || 'Failed to save repair.', 'error');

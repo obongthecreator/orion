@@ -254,6 +254,7 @@ if ( class_exists( 'Orion_Auth' ) && Orion_Auth::is_logged_in() ) {
   })();
 
   /* ── Toggle password visibility ── */
+  const BASE       = (window.orionConfig && window.orionConfig.baseUrl) ? window.orionConfig.baseUrl : '/wp-json/orion/v1';
   const toggleBtn  = document.getElementById('togglePassword');
   const passInput  = document.getElementById('password');
   const eyeIcon    = document.getElementById('eyeIcon');
@@ -316,7 +317,7 @@ if ( class_exists( 'Orion_Auth' ) && Orion_Auth::is_logged_in() ) {
     showLoading();
 
     try {
-      const response = await fetch('/wp-json/orion/v1/login', {
+      const response = await fetch(`${BASE}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })

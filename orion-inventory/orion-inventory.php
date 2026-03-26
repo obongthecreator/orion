@@ -245,16 +245,16 @@ function orion_template_router() {
 		Orion_Auth::require_admin();
 	}
 
-	// Map URL slug to template filename (replace hyphens with underscores).
-	$template_slug = str_replace( '-', '_', $page );
-	$template_file = ORION_PATH . 'includes/templates/' . $template_slug . '.php';
+	// Template filename matches the URL slug with hyphens preserved.
+	$template_slug = $page;
+	$template_file = ORION_PATH . 'templates/' . $template_slug . '.php';
 
 	// If a specific template exists, load it; otherwise fall back to a generic shell.
 	if ( file_exists( $template_file ) ) {
 		require $template_file;
 	} else {
 		// Generic fallback so missing templates don't cause a 404.
-		require ORION_PATH . 'includes/templates/shell.php';
+		require ORION_PATH . 'templates/shell.php';
 	}
 
 	exit;

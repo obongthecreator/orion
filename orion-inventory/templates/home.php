@@ -325,8 +325,9 @@ $initials     = strtoupper( implode( '', array_map( fn($w) => $w[0], array_slice
 
     /* ── Logout ── */
     document.getElementById('logoutBtn').addEventListener('click', async () => {
+      const base = (window.orionConfig && window.orionConfig.baseUrl) ? window.orionConfig.baseUrl : '/wp-json/orion/v1';
       try {
-        await fetch('/wp-json/orion/v1/logout', { method: 'POST' });
+        await fetch(`${base}/logout`, { method: 'POST' });
       } catch (_) { /* ignore */ }
       localStorage.removeItem('orion_token');
       window.location.href = '/orion/login';

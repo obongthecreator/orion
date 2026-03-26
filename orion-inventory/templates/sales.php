@@ -404,8 +404,9 @@ $is_admin     = in_array( $user_role, [ 'admin', 'super_admin' ], true );
    SALES PAGE — VANILLA JS
 ══════════════════════════════════════════════ */
 
-let products      = [];
-let rowCount      = 0;
+const BASE         = (window.orionConfig && window.orionConfig.baseUrl) ? window.orionConfig.baseUrl : '/wp-json/orion/v1';
+let products       = [];
+let rowCount       = 0;
 let submitCooldown = false;
 
 /* ── Formatters ── */
@@ -425,7 +426,7 @@ function showToast(msg, type = 'success') {
 /* ── Fetch products ── */
 async function loadProducts() {
   try {
-    const res  = await fetch('/wp-json/orion/v1/products?type=sales', {
+    const res  = await fetch(`${BASE}/products?type=sales`, {
       headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('orion_token') || '') }
     });
     const data = await res.json();
@@ -628,7 +629,7 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
   submitCooldown = true;
 
   try {
-    const res  = await fetch('/wp-json/orion/v1/sales', {
+    const res  = await fetch(`${BASE}/sales`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -640,7 +641,7 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
 
     if (data.success) {
       showToast('Sale recorded successfully!');
-      buildReceipt(payload, data.sale_id);
+      buildReceipt(payload, data.sale_id || data.id);
       document.getElementById('receiptModal').classList.add('open');
     } else {
       showToast(data.message || 'Failed to record sale.', 'error');

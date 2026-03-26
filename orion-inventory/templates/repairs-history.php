@@ -364,6 +364,7 @@ $is_admin     = in_array( $user_role, [ 'admin', 'super_admin' ], true );
 ══════════════════════════════════════════════ */
 
 const IS_ADMIN = <?php echo $is_admin ? 'true' : 'false'; ?>;
+const BASE     = (window.orionConfig && window.orionConfig.baseUrl) ? window.orionConfig.baseUrl : '/wp-json/orion/v1';
 const fmt      = n => '₦' + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 let allRepairs      = [];
@@ -387,7 +388,7 @@ function showToast(msg, type = 'success') {
 /* ── Load categories for filter ── */
 async function loadCategories() {
   try {
-    const res  = await fetch('/wp-json/orion/v1/categories?type=repairs', {
+    const res  = await fetch(`${BASE}/categories?type=repairs`, {
       headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('orion_token') || '') }
     });
     const data = await res.json();
@@ -416,7 +417,7 @@ async function loadRepairs() {
     if (from)     params.set('date_from', from);
     if (to)       params.set('date_to', to);
 
-    const res  = await fetch(`/wp-json/orion/v1/repairs?${params}`, {
+    const res  = await fetch(`${BASE}/repairs?${params}`, {
       headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('orion_token') || '') }
     });
     const data = await res.json();
@@ -729,7 +730,7 @@ document.getElementById('confirmDeleteBtn').addEventListener('click', async () =
   if (!pendingDeleteId) return;
   document.getElementById('confirmModal').classList.remove('open');
   try {
-    const res  = await fetch(`/wp-json/orion/v1/repairs/${pendingDeleteId}`, {
+    const res  = await fetch(`${BASE}/repairs/${pendingDeleteId}`, {
       method: 'DELETE',
       headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('orion_token') || '') }
     });
