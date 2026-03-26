@@ -155,30 +155,68 @@ function togglePw(id, btn) {
     : '<iconify-icon icon="solar:eye-linear" style="font-size:1.1rem"></iconify-icon>';
 }
 
+const CHANGE_OVERLAY = `<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.5);text-align:center;padding:4px;font-size:0.6rem;color:#32EDFF;">Change</div>`;
+
+function setAvatar(src) {
+  const p = document.getElementById('avatarPreview');
+  p.innerHTML = `<img src="${src}" alt="Profile" style="width:100%;height:100%;object-fit:cover;border-radius:50%" id="avatarImg">${CHANGE_OVERLAY}`;
+}
+
 function previewAvatar(e) {
   const file = e.target.files[0];
   if (!file) return;
+  // Snapshot current avatar HTML so we can revert if upload fails
+  const prevHTML = document.getElementById('avatarPreview').innerHTML;
+  // Show local base64 preview immediately for instant feedback
   const reader = new FileReader();
-  reader.onload = ev => {
-    const p = document.getElementById('avatarPreview');
-    p.innerHTML = `<img src="${ev.target.result}" alt="Profile" style="width:100%;height:100%;object-fit:cover;border-radius:50%"><div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.5);text-align:center;padding:4px;font-size:0.6rem;color:#32EDFF;">Change</div>`;
-  };
+  reader.onload = ev => setAvatar(ev.target.result);
   reader.readAsDataURL(file);
-  uploadPicture(file);
+  uploadPicture(file, prevHTML);
 }
 
-async function uploadPicture(file) {
+async function uploadPicture(file, prevHTML) {
   const fd = new FormData();
   fd.append('picture', file);
-  const r = await fetch('/wp-json/orion/v1/profile/picture', {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + token },
-    body: fd
-  });
-  const d = await r.json();
-  if (d.success) showToast('Profile picture updated!');
-  else showToast(d.message || 'Upload failed', false);
+  try {
+    const r = await fetch('/wp-json/orion/v1/profile/picture', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: fd
+    });
+    const d = await r.json();
+    if (d.success) {
+      // Replace the temporary base64 preview with the permanent server URL
+      // so the picture persists across page reloads
+      setAvatar(d.url);
+      showToast('Profile picture updated!');
+    } else {
+      // Revert to previous avatar on failure
+      document.getElementById('avatarPreview').innerHTML = prevHTML;
+      showToast(d.message || 'Upload failed', false);
+    }
+  } catch (_) {
+    // Revert on network error
+    document.getElementById('avatarPreview').innerHTML = prevHTML;
+    showToast('Upload failed. Please try again.', false);
+  }
 }
+
+// On page load: fetch current user data from API and ensure avatar is displayed.
+// This is a safety net for cases where PHP-rendered profile_pic is stale or missing.
+(async function loadAvatar() {
+  if (!token) return;
+  try {
+    const r = await fetch('/wp-json/orion/v1/me', { headers: { 'Authorization': 'Bearer ' + token } });
+    const d = await r.json();
+    if (d.success && d.profile_pic) {
+      const p = document.getElementById('avatarPreview');
+      // Only update if PHP didn't already render a valid picture (no <img> in the preview)
+      if (!p.querySelector('img')) {
+        setAvatar(d.profile_pic);
+      }
+    }
+  } catch (err) { console.error('loadAvatar:', err); /* silent in UI — PHP rendering is the primary source */ }
+})();
 
 let saving = false;
 document.getElementById('profileForm').addEventListener('submit', async e => {
