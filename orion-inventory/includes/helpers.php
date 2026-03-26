@@ -98,7 +98,11 @@ function orion_time_ago( $datetime ) {
  * @return string
  */
 function orion_generate_receipt_number() {
-	return 'ORION-' . gmdate( 'Ymd' ) . '-' . str_pad( wp_rand( 1, 99999 ), 5, '0', STR_PAD_LEFT );
+	global $wpdb;
+	// Use an auto-increment counter stored in the DB to guarantee uniqueness.
+	$table = $wpdb->prefix . 'orion_sales';
+	$count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" );
+	return 'ORION-' . gmdate( 'Ymd' ) . '-' . str_pad( $count + 1, 5, '0', STR_PAD_LEFT );
 }
 
 /**

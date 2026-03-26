@@ -278,7 +278,7 @@ $initials     = strtoupper( implode( '', array_map( fn($w) => $w[0], array_slice
     <footer class="mt-16 flex flex-col sm:flex-row items-center justify-between gap-4 pb-6">
       <p class="text-sm" style="color:rgba(255,255,255,0.3);">
         <iconify-icon icon="solar:map-point-bold" style="color:rgba(50,237,255,0.4);vertical-align:-3px;"></iconify-icon>
-        Orion Brothers &copy; <?php echo date('Y'); ?> — Lagos, Nigeria
+        Orion Brothers &copy; <?php echo gmdate('Y'); ?> — Lagos, Nigeria
       </p>
       <button id="logoutBtn" class="btn-logout" aria-label="Sign out">
         <iconify-icon icon="solar:logout-bold" style="font-size:1rem;"></iconify-icon>
