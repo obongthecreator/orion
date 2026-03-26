@@ -261,11 +261,11 @@ $is_admin     = in_array( $user_role, [ 'admin', 'super_admin' ], true );
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label class="field-label" for="repairPrice">Price (₦) <span style="color:#ff8080;">*</span></label>
-          <input type="number" id="repairPrice" class="orion-input" placeholder="0.00" min="0" step="0.01">
+          <input type="text" inputmode="decimal" id="repairPrice" class="orion-input" placeholder="0.00">
         </div>
         <div>
           <label class="field-label" for="repairTotal">Total (₦)</label>
-          <input type="number" id="repairTotal" class="orion-input" placeholder="0.00" min="0" step="0.01">
+          <input type="text" inputmode="decimal" id="repairTotal" class="orion-input" placeholder="0.00">
         </div>
       </div>
     </section>
@@ -350,11 +350,11 @@ $is_admin     = in_array( $user_role, [ 'admin', 'super_admin' ], true );
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div id="transferField" class="hidden">
           <label class="field-label" for="transferAmount">Transfer / Card Amount (₦)</label>
-          <input type="number" id="transferAmount" class="orion-input" placeholder="0.00" min="0" step="0.01">
+          <input type="text" inputmode="decimal" id="transferAmount" class="orion-input" placeholder="0.00">
         </div>
         <div id="cashField" class="hidden">
           <label class="field-label" for="cashAmount">Cash Amount (₦)</label>
-          <input type="number" id="cashAmount" class="orion-input" placeholder="0.00" min="0" step="0.01">
+          <input type="text" inputmode="decimal" id="cashAmount" class="orion-input" placeholder="0.00">
         </div>
         <div id="remainingField" class="hidden">
           <label class="field-label">Balance / Remaining</label>
@@ -408,8 +408,21 @@ $is_admin     = in_array( $user_role, [ 'admin', 'super_admin' ], true );
 
 const BASE         = (window.orionConfig && window.orionConfig.baseUrl) ? window.orionConfig.baseUrl : '/wp-json/orion/v1';
 let submitCooldown = false;
-const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const fmt      = n => '₦' + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const parseNum = v => parseFloat((v || '').toString().replace(/[^\d.]/g, '')) || 0;
+
+function formatMoneyInput(el) {
+  const raw   = el.value.replace(/[^0-9.]/g, '');
+  const parts = raw.split('.');
+  const int   = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  el.value    = parts.length > 1 ? int + '.' + parts[1].slice(0, 2) : int;
+}
+
+function getRepairTotal() {
+  const totalVal = parseNum(document.getElementById('repairTotal').value);
+  const priceVal = parseNum(document.getElementById('repairPrice').value);
+  return totalVal || priceVal;
+}
 
 /* ── Toast ── */
 function showToast(msg, type = 'success') {
@@ -442,18 +455,40 @@ async function loadCategories() {
   }
 }
 
-/* ── Price → Total auto-copy ── */
+/* ── Price → Total auto-copy & formatting ── */
 document.getElementById('repairPrice').addEventListener('input', function() {
+  formatMoneyInput(this);
   const totalField = document.getElementById('repairTotal');
   if (!totalField.dataset.edited) totalField.value = this.value;
-  updateRemaining();
+  syncPaymentAmounts();
 });
 document.getElementById('repairTotal').addEventListener('input', function() {
+  formatMoneyInput(this);
   this.dataset.edited = '1';
-  updateRemaining();
+  syncPaymentAmounts();
 });
 
 /* ── Payment method ── */
+function syncPaymentAmounts() {
+  const method = document.querySelector('input[name="paymentMethod"]:checked')?.value;
+  if (!method) return;
+  const total = getRepairTotal();
+  if (method === 'transfer') {
+    document.getElementById('transferAmount').value    = total.toLocaleString('en-NG', {minimumFractionDigits:2,maximumFractionDigits:2});
+    document.getElementById('transferAmount').readOnly = true;
+  } else if (method === 'cash') {
+    document.getElementById('cashAmount').value    = total.toLocaleString('en-NG', {minimumFractionDigits:2,maximumFractionDigits:2});
+    document.getElementById('cashAmount').readOnly = true;
+  } else if (method === 'both') {
+    const cash     = parseNum(document.getElementById('cashAmount').value);
+    const transfer = Math.max(0, total - cash);
+    document.getElementById('transferAmount').value    = transfer.toLocaleString('en-NG', {minimumFractionDigits:2,maximumFractionDigits:2});
+    document.getElementById('transferAmount').readOnly = true;
+    document.getElementById('cashAmount').readOnly     = false;
+  }
+  updateRemaining();
+}
+
 document.querySelectorAll('input[name="paymentMethod"]').forEach(radio => {
   radio.addEventListener('change', function() {
     const val = this.value;
@@ -462,25 +497,37 @@ document.querySelectorAll('input[name="paymentMethod"]').forEach(radio => {
     document.getElementById('transferField').classList.toggle('hidden', val === 'cash');
     document.getElementById('cashField').classList.toggle('hidden',     val === 'transfer');
     document.getElementById('remainingField').classList.toggle('hidden', val !== 'both');
-    updateRemaining();
+    document.getElementById('transferAmount').value    = '';
+    document.getElementById('transferAmount').readOnly = false;
+    document.getElementById('cashAmount').value        = '';
+    document.getElementById('cashAmount').readOnly     = false;
+    syncPaymentAmounts();
   });
+});
+
+// When cash changes (Both mode): auto-compute transfer = total - cash
+document.getElementById('cashAmount').addEventListener('input', function() {
+  formatMoneyInput(this);
+  const method = document.querySelector('input[name="paymentMethod"]:checked')?.value;
+  if (method !== 'both') return;
+  const total    = getRepairTotal();
+  const cash     = parseNum(this.value);
+  const transfer = Math.max(0, total - cash);
+  document.getElementById('transferAmount').value = transfer.toLocaleString('en-NG', {minimumFractionDigits:2,maximumFractionDigits:2});
+  updateRemaining();
 });
 
 function updateRemaining() {
   const method = document.querySelector('input[name="paymentMethod"]:checked')?.value;
   if (method !== 'both') return;
-  const total    = parseNum(document.getElementById('repairTotal').value || document.getElementById('repairPrice').value);
+  const total    = getRepairTotal();
   const transfer = parseNum(document.getElementById('transferAmount').value);
   const cash     = parseNum(document.getElementById('cashAmount').value);
   const rem      = total - transfer - cash;
   const el       = document.getElementById('remainingAmount');
   el.textContent = fmt(rem);
-  el.style.color = rem <= 0 ? '#32ed80' : '#ff8080';
+  el.style.color = Math.abs(rem) < 0.02 ? '#32ed80' : '#ff8080';
 }
-
-['transferAmount','cashAmount'].forEach(id => {
-  document.getElementById(id)?.addEventListener('input', updateRemaining);
-});
 
 /* ── Photo upload preview ── */
 function setupPhotoPreview(inputId, previewId, placeholderId) {
@@ -504,17 +551,29 @@ setupPhotoPreview('devicePhotoInput',   'devicePhotoPreview',   'devicePhotoPlac
 document.getElementById('submitBtn').addEventListener('click', async () => {
   if (submitCooldown) return;
 
-  const category = document.getElementById('repairCategory').value;
-  const complaint = document.getElementById('complaint').value.trim();
+  const category     = document.getElementById('repairCategory').value;
+  const complaint    = document.getElementById('complaint').value.trim();
   const customerName = document.getElementById('customerName').value.trim();
-  const payMethod = document.querySelector('input[name="paymentMethod"]:checked')?.value;
-  const price = parseNum(document.getElementById('repairPrice').value);
+  const payMethod    = document.querySelector('input[name="paymentMethod"]:checked')?.value;
+  const price        = getRepairTotal();
 
   if (!category)     { showToast('Please select a category.', 'error');         return; }
   if (!complaint)    { showToast('Complaint is required.', 'error');             return; }
   if (!customerName) { showToast('Customer name is required.', 'error');         return; }
   if (!payMethod)    { showToast('Please select a payment method.', 'error');    return; }
   if (!price)        { showToast('Please enter a repair price.', 'error');       return; }
+
+  const transferAmount = parseNum(document.getElementById('transferAmount').value);
+  const cashAmount     = parseNum(document.getElementById('cashAmount').value);
+
+  // Validate split for 'both' mode
+  if (payMethod === 'both') {
+    const diff = Math.abs(transferAmount + cashAmount - price);
+    if (diff > 0.02) {
+      showToast(`Transfer + Cash must equal Total (${fmt(price)}).`, 'error');
+      return;
+    }
+  }
 
   const btn = document.getElementById('submitBtn');
   btn.disabled = true;
@@ -527,18 +586,18 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
   formData.append('complaint',         complaint);
   formData.append('diagnosis',         document.getElementById('diagnosis').value.trim());
   formData.append('solution',          document.getElementById('solution').value.trim());
-  formData.append('price',             price);
-  formData.append('total',             parseNum(document.getElementById('repairTotal').value) || price);
+  formData.append('price',             parseNum(document.getElementById('repairPrice').value));
+  formData.append('total',             price);
   formData.append('customer_name',     customerName);
   formData.append('customer_whatsapp', document.getElementById('customerWhatsapp').value.trim());
   formData.append('payment_method',    payMethod);
-  formData.append('transfer_amount',   parseNum(document.getElementById('transferAmount').value));
-  formData.append('cash_amount',       parseNum(document.getElementById('cashAmount').value));
+  formData.append('transfer_amount',   payMethod === 'cash'     ? 0 : transferAmount);
+  formData.append('cash_amount',       payMethod === 'transfer' ? 0 : cashAmount);
 
   const custFile   = document.getElementById('customerPhotoInput').files[0];
   const deviceFile = document.getElementById('devicePhotoInput').files[0];
-  if (custFile)   formData.append('customer_photo', custFile);
-  if (deviceFile) formData.append('device_photo',   deviceFile);
+  if (custFile)   formData.append('customer_image', custFile);
+  if (deviceFile) formData.append('device_image',   deviceFile);
 
   try {
     const res  = await fetch(`${BASE}/repairs`, {
@@ -548,9 +607,9 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
     });
     const data = await res.json();
 
-    if (data.success) {
+    if (res.ok && (data.success || data.id)) {
       showToast('Repair saved successfully!');
-      buildReceipt(data.repair_id || data.id);
+      buildReceipt(data.id);
       document.getElementById('receiptModal').classList.add('open');
     } else {
       showToast(data.message || 'Failed to save repair.', 'error');
@@ -572,7 +631,7 @@ function buildReceipt(repairId) {
   const catSel  = document.getElementById('repairCategory');
   const catName = catSel.options[catSel.selectedIndex]?.text || '';
   const price   = parseNum(document.getElementById('repairPrice').value);
-  const total   = parseNum(document.getElementById('repairTotal').value) || price;
+  const total   = getRepairTotal();
   const method  = document.querySelector('input[name="paymentMethod"]:checked')?.value || '';
 
   let lines = '';
@@ -629,8 +688,10 @@ document.getElementById('newRepairBtn').addEventListener('click', () => {
   document.querySelectorAll('input[name="paymentMethod"]').forEach(r => r.checked = false);
   document.querySelectorAll('.radio-pill').forEach(p => p.classList.remove('selected'));
   ['transferField','cashField','remainingField'].forEach(id => document.getElementById(id).classList.add('hidden'));
-  document.getElementById('transferAmount').value = '';
-  document.getElementById('cashAmount').value     = '';
+  document.getElementById('transferAmount').value    = '';
+  document.getElementById('transferAmount').readOnly = false;
+  document.getElementById('cashAmount').value        = '';
+  document.getElementById('cashAmount').readOnly     = false;
   ['customerPhotoPreview','devicePhotoPreview'].forEach(id => {
     const img = document.getElementById(id);
     img.src = ''; img.classList.remove('visible');

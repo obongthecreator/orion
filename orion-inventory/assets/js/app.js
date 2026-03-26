@@ -117,7 +117,7 @@ OrionApp.navigateTo = function (url) {
 
   setTimeout(() => {
     window.location.href = url;
-  }, 350);
+  }, 100);
 };
 
 // Intercept all internal /orion/ anchor clicks
@@ -904,7 +904,7 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('DOMContentLoaded', () => {
   // Page-enter transition
   document.body.classList.add('page-enter');
-  setTimeout(() => document.body.classList.remove('page-enter'), 400);
+  setTimeout(() => document.body.classList.remove('page-enter'), 150);
 
   // Core features
   OrionApp.initLetterAnimation();

@@ -831,6 +831,169 @@ class Orion_DB {
 		);
 	}
 
+	/**
+	 * Returns ALL sales-type products with their stock data for a given date (LEFT JOIN).
+	 * Products without a stock row show zeroes — this ensures every product appears.
+	 */
+	public static function get_all_products_with_stock( $date ) {
+		global $wpdb;
+		$date = sanitize_text_field( $date );
+
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT p.id AS product_id, p.name AS product_name,
+				        COALESCE(c.name, \'\') AS category,
+				        COALESCE(st.id, 0)             AS stock_id,
+				        COALESCE(st.opening_stock, 0)  AS opening_stock,
+				        COALESCE(st.import_qty, 0)     AS import_qty,
+				        COALESCE(st.sold_stock, 0)     AS sold_stock,
+				        COALESCE(st.sold_stock, 0)     AS sold_qty,
+				        COALESCE(st.closing_stock, 0)  AS closing_stock,
+				        st.updated_at
+				FROM ' . self::table('products') . ' p
+				LEFT JOIN ' . self::table('categories') . ' c ON c.id = p.category_id
+				LEFT JOIN ' . self::table('stock') . ' st
+				       ON st.product_id = p.id AND st.date = %s
+				WHERE p.type = \'sales\'
+				ORDER BY c.name ASC, p.name ASC',
+				$date
+			)
+		);
+	}
+
+	/**
+	 * Increments import_qty for a product on a given date (upsert).
+	 * Also recomputes closing_stock.
+	 */
+	public static function add_import_qty( $product_id, $date, $qty ) {
+		global $wpdb;
+
+		$product_id = (int) $product_id;
+		$date       = sanitize_text_field( $date );
+		$qty        = (int) $qty;
+
+		$product_name = $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT name FROM ' . self::table('products') . ' WHERE id = %d LIMIT 1',
+				$product_id
+			)
+		);
+
+		$existing = $wpdb->get_row(
+			$wpdb->prepare(
+				'SELECT id, opening_stock, import_qty, sold_stock FROM ' . self::table('stock') . '
+				 WHERE product_id = %d AND date = %s LIMIT 1',
+				$product_id,
+				$date
+			)
+		);
+
+		if ( $existing ) {
+			$new_import  = (int) $existing->import_qty + $qty;
+			$new_closing = (int) $existing->opening_stock + $new_import - (int) $existing->sold_stock;
+			$wpdb->update(
+				self::table('stock'),
+				[
+					'import_qty'    => $new_import,
+					'closing_stock' => max( 0, $new_closing ),
+				],
+				[ 'id' => (int) $existing->id ]
+			);
+		} else {
+			$wpdb->insert(
+				self::table('stock'),
+				[
+					'product_id'    => $product_id,
+					'product_name'  => sanitize_text_field( $product_name ?? '' ),
+					'opening_stock' => 0,
+					'import_qty'    => $qty,
+					'sold_stock'    => 0,
+					'closing_stock' => $qty,
+					'date'          => $date,
+					'staff_id'      => 0,
+				]
+			);
+		}
+	}
+
+	/**
+	 * Returns a date-filtered list of financial summaries.
+	 */
+	public static function get_financial_summary_by_date( $date ) {
+		global $wpdb;
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT fs.*, u.full_name AS staff_name FROM ' . self::table('financial_summary') . ' fs
+				LEFT JOIN ' . self::table('users') . ' u ON u.id = fs.staff_id
+				WHERE fs.date = %s ORDER BY fs.date DESC LIMIT 1',
+				sanitize_text_field( $date )
+			)
+		);
+	}
+
+	/**
+	 * Returns computed daily totals from the sales and credit_sales tables.
+	 * Used to auto-populate the financial summary form.
+	 */
+	public static function get_daily_totals( $date ) {
+		global $wpdb;
+		$date = sanitize_text_field( $date );
+
+		$sales_t  = self::table('sales');
+		$credit_t = self::table('credit_sales');
+
+		$total_sales = (float) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COALESCE(SUM(total_amount),0) FROM {$sales_t} WHERE order_date = %s",
+				$date
+			)
+		);
+
+		$transfer_sales = (float) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COALESCE(SUM(transfer_amount),0) FROM {$sales_t} WHERE order_date = %s",
+				$date
+			)
+		);
+
+		$cash_sales = (float) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COALESCE(SUM(cash_amount),0) FROM {$sales_t} WHERE order_date = %s",
+				$date
+			)
+		);
+
+		$discount_total = (float) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COALESCE(SUM(discount_total),0) FROM {$sales_t} WHERE order_date = %s",
+				$date
+			)
+		);
+
+		$credit_total = (float) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COALESCE(SUM(total_amount),0) FROM {$credit_t} WHERE DATE(created_at) = %s",
+				$date
+			)
+		);
+
+		$credit_paid = (float) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COALESCE(SUM(amount_paid),0) FROM {$credit_t} WHERE DATE(created_at) = %s",
+				$date
+			)
+		);
+
+		return [
+			'total_sales'         => $total_sales,
+			'transfer_card_sales' => $transfer_sales,
+			'cash_sales'          => $cash_sales,
+			'discount_total'      => $discount_total,
+			'credit_total'        => $credit_total,
+			'credit_paid'         => $credit_paid,
+		];
+	}
+
 	public static function update_stock( $product_id, $date, $data ) {
 		global $wpdb;
 

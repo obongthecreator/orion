@@ -93,12 +93,20 @@ class Orion_API {
 			[ 'methods' => 'GET',  'callback' => [ $this, 'get_financial_summary' ],  'permission_callback' => [ $this, 'check_auth' ] ],
 			[ 'methods' => 'POST', 'callback' => [ $this, 'save_financial_summary' ], 'permission_callback' => [ $this, 'check_auth' ] ],
 		] );
+		register_rest_route( $ns, '/financial-summary/live', [
+			'methods'             => 'GET',
+			'callback'            => [ $this, 'get_financial_summary_live' ],
+			'permission_callback' => [ $this, 'check_auth' ],
+		] );
 
 		// Import
 		register_rest_route( $ns, '/import', [
-			'methods'             => 'POST',
-			'callback'            => [ $this, 'save_import' ],
-			'permission_callback' => [ $this, 'check_auth' ],
+			[ 'methods' => 'GET',  'callback' => [ $this, 'get_import_for_date' ], 'permission_callback' => [ $this, 'check_auth' ] ],
+			[ 'methods' => 'POST', 'callback' => [ $this, 'save_import' ],         'permission_callback' => [ $this, 'check_auth' ] ],
+		] );
+		register_rest_route( $ns, '/import/(?P<id>\d+)', [
+			[ 'methods' => 'PATCH',  'callback' => [ $this, 'update_import' ], 'permission_callback' => [ $this, 'check_auth' ] ],
+			[ 'methods' => 'DELETE', 'callback' => [ $this, 'delete_import' ], 'permission_callback' => [ $this, 'check_auth' ] ],
 		] );
 		register_rest_route( $ns, '/import-history', [
 			'methods'             => 'GET',
@@ -110,6 +118,17 @@ class Orion_API {
 		register_rest_route( $ns, '/stock', [
 			[ 'methods' => 'GET',  'callback' => [ $this, 'get_stock' ],    'permission_callback' => [ $this, 'check_auth' ] ],
 			[ 'methods' => 'POST', 'callback' => [ $this, 'update_stock' ], 'permission_callback' => [ $this, 'check_auth' ] ],
+		] );
+		register_rest_route( $ns, '/stock/(?P<id>\d+)', [
+			'methods'             => 'PATCH',
+			'callback'            => [ $this, 'patch_stock' ],
+			'permission_callback' => [ $this, 'check_auth' ],
+		] );
+		// Returns ALL products with their stock data for a given date (powers the stock management page).
+		register_rest_route( $ns, '/stock/products', [
+			'methods'             => 'GET',
+			'callback'            => [ $this, 'get_stock_all_products' ],
+			'permission_callback' => [ $this, 'check_auth' ],
 		] );
 
 		// Users (admin only)
@@ -284,23 +303,43 @@ class Orion_API {
 	public function create_sale( WP_REST_Request $request ) {
 		$user = $this->get_request_user( $request );
 
+		// Accept 'total_amount' or legacy 'grand_total' from the sales form.
+		$total_amount = (float) (
+			$request->get_param( 'total_amount' )
+				?? $request->get_param( 'grand_total' )
+				?? 0
+		);
+
 		$sale_data = [
 			'customer_name'     => sanitize_text_field( $request->get_param( 'customer_name' ) ?? '' ),
 			'customer_whatsapp' => sanitize_text_field( $request->get_param( 'customer_whatsapp' ) ?? '' ),
 			'payment_method'    => sanitize_text_field( $request->get_param( 'payment_method' ) ?? '' ),
 			'transfer_amount'   => (float) ( $request->get_param( 'transfer_amount' ) ?? 0 ),
 			'cash_amount'       => (float) ( $request->get_param( 'cash_amount' ) ?? 0 ),
-			'total_amount'      => (float) ( $request->get_param( 'total_amount' ) ?? 0 ),
+			'total_amount'      => $total_amount,
 			'discount_total'    => (float) ( $request->get_param( 'discount_total' ) ?? 0 ),
 			'staff_id'          => $user ? (int) $user->id : 0,
 			'order_date'        => sanitize_text_field( $request->get_param( 'order_date' ) ?? current_time('Y-m-d') ),
 		];
 
-		$items = $request->get_param( 'items' ) ?? [];
+		$raw_items = $request->get_param( 'items' ) ?? [];
 
-		if ( empty( $items ) ) {
+		if ( empty( $raw_items ) ) {
 			return new WP_REST_Response( [ 'message' => 'Sale items are required' ], 400 );
 		}
+
+		// Normalise field names: the form may send 'qty' or 'quantity'; 'category' or 'category_name'.
+		$items = array_map( function( $item ) {
+			return [
+				'product_id'    => $item['product_id']    ?? 0,
+				'product_name'  => $item['product_name']  ?? '',
+				'category_name' => $item['category_name'] ?? $item['category'] ?? '',
+				'price'         => $item['price']         ?? 0,
+				'quantity'      => $item['quantity']      ?? $item['qty'] ?? 1,
+				'discount'      => $item['discount']      ?? 0,
+				'total'         => $item['total']         ?? 0,
+			];
+		}, $raw_items );
 
 		$id = Orion_DB::insert_sale( $sale_data, $items );
 
@@ -308,7 +347,7 @@ class Orion_API {
 			return new WP_REST_Response( [ 'message' => 'Failed to create sale' ], 500 );
 		}
 
-		return new WP_REST_Response( [ 'id' => $id, 'receipt' => orion_generate_receipt_number() ], 201 );
+		return new WP_REST_Response( [ 'success' => true, 'id' => $id, 'receipt' => orion_generate_receipt_number() ], 201 );
 	}
 
 	public function get_sales( WP_REST_Request $request ) {
@@ -359,7 +398,7 @@ class Orion_API {
 		];
 
 		$id = Orion_DB::insert_repair( $data );
-		return new WP_REST_Response( [ 'id' => $id ], 201 );
+		return new WP_REST_Response( [ 'success' => true, 'id' => $id ], 201 );
 	}
 
 	public function get_repairs( WP_REST_Request $request ) {
@@ -393,11 +432,24 @@ class Orion_API {
 			'staff_id'          => $user ? (int) $user->id : 0,
 		];
 
-		$items = $request->get_param( 'items' ) ?? [];
+		$raw_items = $request->get_param( 'items' ) ?? [];
 
-		if ( empty( $items ) ) {
+		if ( empty( $raw_items ) ) {
 			return new WP_REST_Response( [ 'message' => 'Sale items are required' ], 400 );
 		}
+
+		// Normalise field names.
+		$items = array_map( function( $item ) {
+			return [
+				'product_id'    => $item['product_id']    ?? 0,
+				'product_name'  => $item['product_name']  ?? '',
+				'category_name' => $item['category_name'] ?? $item['category'] ?? '',
+				'price'         => $item['price']         ?? 0,
+				'quantity'      => $item['quantity']      ?? $item['qty'] ?? 1,
+				'discount'      => $item['discount']      ?? 0,
+				'total'         => $item['total']         ?? 0,
+			];
+		}, $raw_items );
 
 		$id = Orion_DB::insert_credit_sale( $sale_data, $items );
 
@@ -405,7 +457,7 @@ class Orion_API {
 			return new WP_REST_Response( [ 'message' => 'Failed to create credit sale' ], 500 );
 		}
 
-		return new WP_REST_Response( [ 'id' => $id ], 201 );
+		return new WP_REST_Response( [ 'success' => true, 'id' => $id ], 201 );
 	}
 
 	public function get_credit_sales( WP_REST_Request $request ) {
@@ -452,16 +504,37 @@ class Orion_API {
 	// -------------------------------------------------------------------------
 
 	public function get_financial_summary( WP_REST_Request $request ) {
+		$date = $request->get_param( 'date' );
+		if ( $date ) {
+			$rows = Orion_DB::get_financial_summary_by_date( sanitize_text_field( $date ) );
+			return new WP_REST_Response( $rows, 200 );
+		}
 		$limit  = (int) ( $request->get_param( 'limit' )  ?? 50 );
 		$offset = (int) ( $request->get_param( 'offset' ) ?? 0 );
 		return new WP_REST_Response( Orion_DB::get_financial_summary( $limit, $offset ), 200 );
 	}
 
+	/**
+	 * Returns live (real-time) computed totals from sales / credit-sales tables for a given date.
+	 */
+	public function get_financial_summary_live( WP_REST_Request $request ) {
+		$date = sanitize_text_field( $request->get_param( 'date' ) ?? current_time('Y-m-d') );
+		$totals = Orion_DB::get_daily_totals( $date );
+		return new WP_REST_Response( [ 'success' => true, 'data' => $totals ], 200 );
+	}
+
 	public function save_financial_summary( WP_REST_Request $request ) {
 		$user = $this->get_request_user( $request );
 
+		// Accept 'date' or legacy 'summary_date' param.
+		$date = sanitize_text_field(
+			$request->get_param( 'date' )
+				?? $request->get_param( 'summary_date' )
+				?? current_time('Y-m-d')
+		);
+
 		$data = [
-			'date'                => sanitize_text_field( $request->get_param( 'date' ) ?? current_time('Y-m-d') ),
+			'date'                => $date,
 			'total_sales'         => (float) ( $request->get_param( 'total_sales' ) ?? 0 ),
 			'transfer_card_sales' => (float) ( $request->get_param( 'transfer_card_sales' ) ?? 0 ),
 			'cash_sales'          => (float) ( $request->get_param( 'cash_sales' ) ?? 0 ),
@@ -476,29 +549,110 @@ class Orion_API {
 		];
 
 		$id = Orion_DB::insert_financial_summary( $data );
-		return new WP_REST_Response( [ 'id' => $id ], 201 );
+		return new WP_REST_Response( [ 'success' => true, 'id' => $id ], 201 );
 	}
 
 	// -------------------------------------------------------------------------
 	// Import endpoints
 	// -------------------------------------------------------------------------
 
+	/**
+	 * Returns import rows for a given date (used by the import page date-switcher).
+	 */
+	public function get_import_for_date( WP_REST_Request $request ) {
+		global $wpdb;
+		$date = sanitize_text_field( $request->get_param( 'date' ) ?? '' );
+		if ( ! $date ) {
+			return new WP_REST_Response( [], 200 );
+		}
+		$t    = $wpdb->prefix . 'orion_imports';
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$t} WHERE DATE(created_at) = %s ORDER BY created_at ASC",
+				$date
+			)
+		);
+		return new WP_REST_Response( $rows, 200 );
+	}
+
 	public function save_import( WP_REST_Request $request ) {
 		$user = $this->get_request_user( $request );
 
-		$data = [
-			'product_id'   => (int) ( $request->get_param( 'product_id' ) ?? 0 ),
-			'product_name' => sanitize_text_field( $request->get_param( 'product_name' ) ?? '' ),
-			'quantity'     => (int) ( $request->get_param( 'quantity' ) ?? 0 ),
-			'staff_id'     => $user ? (int) $user->id : 0,
-		];
+		$product_id = (int) ( $request->get_param( 'product_id' ) ?? 0 );
+		$quantity   = (int) ( $request->get_param( 'quantity' ) ?? 0 );
+		$date       = sanitize_text_field( $request->get_param( 'date' ) ?? current_time('Y-m-d') );
 
-		if ( ! $data['product_id'] || $data['quantity'] <= 0 ) {
+		if ( ! $product_id || $quantity <= 0 ) {
 			return new WP_REST_Response( [ 'message' => 'product_id and a positive quantity are required' ], 400 );
 		}
 
+		// Resolve product name server-side if not provided.
+		$product_name = sanitize_text_field( $request->get_param( 'product_name' ) ?? '' );
+		if ( ! $product_name ) {
+			global $wpdb;
+			$product_name = (string) $wpdb->get_var(
+				$wpdb->prepare( 'SELECT name FROM ' . $wpdb->prefix . 'orion_products WHERE id = %d LIMIT 1', $product_id )
+			);
+		}
+
+		$data = [
+			'product_id'   => $product_id,
+			'product_name' => $product_name,
+			'quantity'     => $quantity,
+			'staff_id'     => $user ? (int) $user->id : 0,
+		];
+
 		$id = Orion_DB::insert_import( $data );
-		return new WP_REST_Response( [ 'id' => $id ], 201 );
+
+		// Update the stock table's import_qty for this product and date.
+		Orion_DB::add_import_qty( $product_id, $date, $quantity );
+
+		return new WP_REST_Response( [ 'success' => true, 'id' => $id ], 201 );
+	}
+
+	/**
+	 * Updates an existing import row (PATCH /import/:id).
+	 * Adjusts the stock import_qty diff.
+	 */
+	public function update_import( WP_REST_Request $request ) {
+		global $wpdb;
+		$id         = (int) $request->get_param( 'id' );
+		$product_id = (int) ( $request->get_param( 'product_id' ) ?? 0 );
+		$new_qty    = (int) ( $request->get_param( 'quantity' ) ?? 0 );
+		$date       = sanitize_text_field( $request->get_param( 'date' ) ?? current_time('Y-m-d') );
+		$t          = $wpdb->prefix . 'orion_imports';
+
+		$old = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$t} WHERE id = %d LIMIT 1", $id ) );
+		if ( ! $old ) {
+			return new WP_REST_Response( [ 'message' => 'Import not found' ], 404 );
+		}
+
+		$diff = $new_qty - (int) $old->quantity;
+		$wpdb->update( $t, [ 'quantity' => $new_qty ], [ 'id' => $id ] );
+
+		if ( $diff !== 0 ) {
+			Orion_DB::add_import_qty( $product_id ?: (int) $old->product_id, $date, $diff );
+		}
+
+		return new WP_REST_Response( [ 'success' => true, 'id' => $id ], 200 );
+	}
+
+	/**
+	 * Deletes an import row and reverses the stock adjustment.
+	 */
+	public function delete_import( WP_REST_Request $request ) {
+		global $wpdb;
+		$id = (int) $request->get_param( 'id' );
+		$t  = $wpdb->prefix . 'orion_imports';
+
+		$old = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$t} WHERE id = %d LIMIT 1", $id ) );
+		if ( $old ) {
+			$date = gmdate( 'Y-m-d', strtotime( $old->created_at ) );
+			Orion_DB::add_import_qty( (int) $old->product_id, $date, -(int) $old->quantity );
+		}
+
+		$wpdb->delete( $t, [ 'id' => $id ] );
+		return new WP_REST_Response( [ 'success' => true ], 200 );
 	}
 
 	public function get_import_history( WP_REST_Request $request ) {
@@ -514,6 +668,15 @@ class Orion_API {
 	public function get_stock( WP_REST_Request $request ) {
 		$date = $request->get_param( 'date' );
 		return new WP_REST_Response( Orion_DB::get_stock( $date ? sanitize_text_field( $date ) : null ), 200 );
+	}
+
+	/**
+	 * Returns ALL products (sales type) with their stock data for a date.
+	 * Products with no stock record return zeroes so every product shows up.
+	 */
+	public function get_stock_all_products( WP_REST_Request $request ) {
+		$date = sanitize_text_field( $request->get_param( 'date' ) ?? current_time('Y-m-d') );
+		return new WP_REST_Response( Orion_DB::get_all_products_with_stock( $date ), 200 );
 	}
 
 	public function update_stock( WP_REST_Request $request ) {
@@ -535,7 +698,38 @@ class Orion_API {
 		];
 
 		$id = Orion_DB::update_stock( $product_id, $date, $data );
-		return new WP_REST_Response( [ 'id' => $id ], 200 );
+		return new WP_REST_Response( [ 'success' => true, 'id' => $id ], 200 );
+	}
+
+	/**
+	 * PATCH /stock/:id — update an existing stock row by its primary key.
+	 */
+	public function patch_stock( WP_REST_Request $request ) {
+		global $wpdb;
+		$stock_id = (int) $request->get_param( 'id' );
+		$user     = $this->get_request_user( $request );
+
+		$row = $wpdb->get_row(
+			$wpdb->prepare( 'SELECT * FROM ' . $wpdb->prefix . 'orion_stock WHERE id = %d LIMIT 1', $stock_id )
+		);
+		if ( ! $row ) {
+			return new WP_REST_Response( [ 'message' => 'Stock row not found' ], 404 );
+		}
+
+		$data = [
+			'opening_stock' => (int) ( $request->get_param( 'opening_stock' ) ?? $row->opening_stock ),
+			'import_qty'    => (int) ( $request->get_param( 'import_qty' )    ?? $row->import_qty ),
+			'sold_stock'    => (int) ( $request->get_param( 'sold_stock' )    ?? $row->sold_stock ),
+			'closing_stock' => (int) ( $request->get_param( 'closing_stock' ) ?? $row->closing_stock ),
+			'staff_id'      => $user ? (int) $user->id : (int) $row->staff_id,
+		];
+
+		$wpdb->update(
+			$wpdb->prefix . 'orion_stock',
+			$data,
+			[ 'id' => $stock_id ]
+		);
+		return new WP_REST_Response( [ 'success' => true, 'id' => $stock_id ], 200 );
 	}
 
 	// -------------------------------------------------------------------------

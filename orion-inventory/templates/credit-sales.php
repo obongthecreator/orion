@@ -415,17 +415,17 @@ $user_role    = $current_user['role'] ?? 'staff';
             </div>
           </div>
 
-          <!-- Split amounts (shown when "both" selected) -->
-          <div id="splitAmounts" class="hidden grid grid-cols-2 gap-4 mb-4">
-            <div>
+          <!-- Split amounts (shown for all payment modes) -->
+          <div id="splitAmounts" class="hidden grid-cols-2 gap-4 mb-4">
+            <div id="transferAmountWrap">
               <label for="transferAmount">Transfer / Card Amount (₦)</label>
               <input type="text" id="transferAmount" name="transfer_amount" class="orion-input"
-                     placeholder="0.00" inputmode="decimal" oninput="formatMoneyInput(this); calcBalance();">
+                     placeholder="0.00" inputmode="decimal" oninput="formatMoneyInput(this);">
             </div>
-            <div>
+            <div id="cashAmountWrap">
               <label for="cashAmount">Cash Amount (₦)</label>
               <input type="text" id="cashAmount" name="cash_amount" class="orion-input"
-                     placeholder="0.00" inputmode="decimal" oninput="formatMoneyInput(this); calcBalance();">
+                     placeholder="0.00" inputmode="decimal" oninput="formatMoneyInput(this);">
             </div>
           </div>
 
@@ -676,7 +676,9 @@ $user_role    = $current_user['role'] ?? 'staff';
   ───────────────────────────────────────── */
   async function loadProducts() {
     try {
-      const r = await fetch(`${BASE}/products`);
+      const r = await fetch(`${BASE}/products`, {
+        headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('orion_token') || '') }
+      });
       const d = await r.json();
       products = Array.isArray(d) ? d : (d.data || d.products || []);
     } catch (_) { products = []; }
@@ -686,7 +688,7 @@ $user_role    = $current_user['role'] ?? 'staff';
     let opts = '<option value="">— Select item —</option>';
     products.forEach(p => {
       const sel = p.id == selectedId ? 'selected' : '';
-      opts += `<option value="${p.id}" data-price="${parseFloat(p.price)||0}" data-category="${escHtml(p.category||'')}" ${sel}>${escHtml(p.name)}</option>`;
+      opts += `<option value="${p.id}" data-price="${parseFloat(p.price)||0}" data-category="${escHtml(p.category_name||p.category||'')}" ${sel}>${escHtml(p.name)}</option>`;
     });
     return opts;
   }
@@ -776,40 +778,101 @@ $user_role    = $current_user['role'] ?? 'staff';
     calcGrandTotal();
   }
 
-  function calcGrandTotal() {
+  function getGrandTotalCS() {
     let sum = 0;
     document.querySelectorAll('.row-total').forEach(el => {
       sum += parseNum(el.textContent.replace('₦', ''));
     });
+    return sum;
+  }
+
+  function calcGrandTotal() {
+    const sum = getGrandTotalCS();
     document.getElementById('grandTotal').textContent = formatNum(sum);
     calcBalance();
+    syncCSPaymentAmounts();
   }
 
   /* ─────────────────────────────────────────
      Balance calculation
   ───────────────────────────────────────── */
   function calcBalance() {
-    const total   = parseNum(document.getElementById('grandTotal').textContent);
+    const total   = getGrandTotalCS();
     const paid    = parseNum(document.getElementById('amountPaid').value);
     const balance = Math.max(0, total - paid);
     document.getElementById('balanceDisplay').textContent = formatNum(balance);
   }
 
+  document.getElementById('amountPaid').addEventListener('input', function() {
+    formatMoneyInput(this);
+    calcBalance();
+  });
+
   /* ─────────────────────────────────────────
      Payment method handler
   ───────────────────────────────────────── */
+  function syncCSPaymentAmounts() {
+    const method = document.querySelector('input[name="payment_method"]:checked')?.value;
+    if (!method) return;
+    const total = getGrandTotalCS();
+    const transferEl = document.getElementById('transferAmount');
+    const cashEl     = document.getElementById('cashAmount');
+    if (method === 'transfer_card') {
+      transferEl.value    = total.toLocaleString('en-NG', {minimumFractionDigits:2,maximumFractionDigits:2});
+      transferEl.readOnly = true;
+    } else if (method === 'cash') {
+      cashEl.value    = total.toLocaleString('en-NG', {minimumFractionDigits:2,maximumFractionDigits:2});
+      cashEl.readOnly = true;
+    } else if (method === 'both') {
+      const cash     = parseNum(cashEl.value);
+      const transfer = Math.max(0, total - cash);
+      transferEl.value    = transfer.toLocaleString('en-NG', {minimumFractionDigits:2,maximumFractionDigits:2});
+      transferEl.readOnly = true;
+      cashEl.readOnly     = false;
+    }
+  }
+
   function handlePaymentMethod(radio) {
     document.querySelectorAll('.radio-pill').forEach(p => p.classList.remove('selected'));
     radio.closest('.radio-pill').classList.add('selected');
-    const splitDiv = document.getElementById('splitAmounts');
-    if (radio.value === 'both') {
-      splitDiv.classList.remove('hidden');
-      splitDiv.classList.add('grid');
+    const splitDiv   = document.getElementById('splitAmounts');
+    const transferEl = document.getElementById('transferAmount');
+    const cashEl     = document.getElementById('cashAmount');
+    const transferWrap = document.getElementById('transferAmountWrap');
+    const cashWrap     = document.getElementById('cashAmountWrap');
+
+    transferEl.value    = '';
+    transferEl.readOnly = false;
+    cashEl.value        = '';
+    cashEl.readOnly     = false;
+
+    // Always show splitAmounts; toggle which sub-fields are visible.
+    splitDiv.classList.remove('hidden');
+    splitDiv.classList.add('grid');
+
+    if (radio.value === 'transfer_card') {
+      transferWrap.classList.remove('hidden');
+      cashWrap.classList.add('hidden');
+    } else if (radio.value === 'cash') {
+      cashWrap.classList.remove('hidden');
+      transferWrap.classList.add('hidden');
     } else {
-      splitDiv.classList.add('hidden');
-      splitDiv.classList.remove('grid');
+      transferWrap.classList.remove('hidden');
+      cashWrap.classList.remove('hidden');
     }
+    syncCSPaymentAmounts();
   }
+
+  // When cash changes (Both mode): auto-compute transfer = total - cash
+  document.getElementById('cashAmount').addEventListener('input', function() {
+    formatMoneyInput(this);
+    const method = document.querySelector('input[name="payment_method"]:checked')?.value;
+    if (method !== 'both') return;
+    const total    = getGrandTotalCS();
+    const cash     = parseNum(this.value);
+    const transfer = Math.max(0, total - cash);
+    document.getElementById('transferAmount').value = transfer.toLocaleString('en-NG', {minimumFractionDigits:2,maximumFractionDigits:2});
+  });
 
   /* ─────────────────────────────────────────
      Confirmation checkbox → enable submit
@@ -832,40 +895,54 @@ $user_role    = $current_user['role'] ?? 'staff';
     // Collect rows
     const rows = [];
     document.querySelectorAll('#itemsBody tr').forEach(tr => {
-      const rowId = tr.id.replace('row-', '');
       const itemSel = tr.querySelector('.item-select');
       if (!itemSel || !itemSel.value) return;
+      const price    = parseNum(tr.querySelector('.row-price').value);
+      const qty      = parseInt(tr.querySelector('.row-qty').value) || 1;
+      const discount = parseNum(tr.querySelector('.row-discount').value);
+      const total    = Math.max(0, price * qty - discount);
       rows.push({
-        product_id: itemSel.value,
+        product_id:   itemSel.value,
         product_name: itemSel.options[itemSel.selectedIndex].text,
-        price: parseNum(tr.querySelector('.row-price').value),
-        qty: parseInt(tr.querySelector('.row-qty').value) || 1,
-        discount: parseNum(tr.querySelector('.row-discount').value),
-        total: parseNum(tr.querySelector('.row-total').textContent.replace('₦', '')),
+        category_name: tr.querySelector('.row-category')?.textContent || '',
+        price,
+        quantity: qty,
+        discount,
+        total,
       });
     });
 
     if (rows.length === 0) { showToast('Please add at least one item.', 'error'); return; }
 
-    const total      = parseNum(document.getElementById('grandTotal').textContent);
+    const total      = getGrandTotalCS();
     const amountPaid = parseNum(document.getElementById('amountPaid').value);
     const balance    = Math.max(0, total - amountPaid);
-    const method     = document.querySelector('input[name="payment_method"]:checked').value;
+    const method     = document.querySelector('input[name="payment_method"]:checked')?.value;
+    if (!method) { showToast('Please select a payment method.', 'error'); return; }
+
+    const transferAmount = method === 'cash'         ? 0 : parseNum(document.getElementById('transferAmount').value);
+    const cashAmount     = method === 'transfer_card'? 0 : parseNum(document.getElementById('cashAmount').value);
+
+    // Validate split for 'both' mode
+    if (method === 'both') {
+      const diff = Math.abs(transferAmount + cashAmount - total);
+      if (diff > 0.02) {
+        showToast(`Transfer + Cash must equal Total (₦${formatNum(total)}).`, 'error');
+        return;
+      }
+    }
 
     const payload = {
-      customer_name: name,
+      customer_name:     name,
       customer_whatsapp: wa,
-      items: rows,
-      total_amount: total,
-      amount_paid: amountPaid,
-      balance: balance,
-      payment_method: method,
+      items:             rows,
+      total_amount:      total,
+      amount_paid:       amountPaid,
+      balance,
+      payment_method:    method,
+      transfer_amount:   transferAmount,
+      cash_amount:       cashAmount,
     };
-
-    if (method === 'both') {
-      payload.transfer_amount = parseNum(document.getElementById('transferAmount').value);
-      payload.cash_amount     = parseNum(document.getElementById('cashAmount').value);
-    }
 
     submitting = true;
     const btn   = document.getElementById('submitCreditBtn');
@@ -876,7 +953,10 @@ $user_role    = $current_user['role'] ?? 'staff';
     try {
       const r = await fetch(`${BASE}/credit-sales`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + (localStorage.getItem('orion_token') || '')
+        },
         body: JSON.stringify(payload),
       });
       const d = await r.json();
@@ -888,6 +968,10 @@ $user_role    = $current_user['role'] ?? 'staff';
       document.getElementById('grandTotal').textContent = '0.00';
       document.getElementById('balanceDisplay').textContent = '0.00';
       document.getElementById('confirmCheck').checked = false;
+      document.getElementById('splitAmounts').classList.add('hidden');
+      document.getElementById('splitAmounts').classList.remove('grid');
+      document.getElementById('transferAmount').readOnly = false;
+      document.getElementById('cashAmount').readOnly     = false;
       rowCount = 0;
       addItemRow();
     } catch (err) {
@@ -912,7 +996,9 @@ $user_role    = $current_user['role'] ?? 'staff';
     tbody.innerHTML = '';
 
     try {
-      const r = await fetch(`${BASE}/credit-sales`);
+      const r = await fetch(`${BASE}/credit-sales`, {
+        headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('orion_token') || '') }
+      });
       const d = await r.json();
       allCreditSales = Array.isArray(d) ? d : (d.data || d.sales || []);
       renderCreditTable(allCreditSales);
@@ -1003,7 +1089,9 @@ $user_role    = $current_user['role'] ?? 'staff';
       '<div class="flex items-center justify-center gap-2 py-8 text-sm" style="color:rgba(255,255,255,0.4);"><iconify-icon icon="solar:refresh-linear" class="animate-spin" style="font-size:1.2rem;"></iconify-icon>Loading…</div>';
     openModal('itemsModal');
     try {
-      const r = await fetch(`${BASE}/credit-sales/${saleId}`);
+      const r = await fetch(`${BASE}/credit-sales/${saleId}`, {
+        headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('orion_token') || '') }
+      });
       const d = await r.json();
       const items = d.items || [];
       if (!items.length) {
@@ -1053,7 +1141,10 @@ $user_role    = $current_user['role'] ?? 'staff';
     try {
       const r = await fetch(`${BASE}/credit-sales/${currentPaymentId}/payment`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + (localStorage.getItem('orion_token') || '')
+        },
         body: JSON.stringify({ amount_paid: amount, payment_method: method }),
       });
       const d = await r.json();
@@ -1078,7 +1169,9 @@ $user_role    = $current_user['role'] ?? 'staff';
       '<div class="flex items-center justify-center gap-2 py-8 text-sm" style="color:rgba(255,255,255,0.4);"><iconify-icon icon="solar:refresh-linear" class="animate-spin" style="font-size:1.2rem;"></iconify-icon>Loading history…</div>';
     openModal('historyModal');
     try {
-      const r = await fetch(`${BASE}/credit-history?whatsapp=${encodeURIComponent(whatsapp)}`);
+      const r = await fetch(`${BASE}/credit-history?whatsapp=${encodeURIComponent(whatsapp)}`, {
+        headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('orion_token') || '') }
+      });
       const d = await r.json();
       const transactions = Array.isArray(d) ? d : (d.data || d.transactions || []);
       renderHistoryModal(transactions, name, whatsapp);

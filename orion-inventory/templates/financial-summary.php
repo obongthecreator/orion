@@ -448,6 +448,7 @@ $user_name    = $current_user['display_name'] ?? $current_user['username'] ?? 'U
     const badgeText = document.getElementById('dateBadgeText');
     const note      = document.getElementById('existingRecordNote');
     const submitLabel = document.getElementById('submitLabel');
+    const authHeader = { 'Authorization': 'Bearer ' + (localStorage.getItem('orion_token') || '') };
 
     badge.classList.remove('hidden', 'existing', 'new');
     badge.classList.add('new');
@@ -456,15 +457,31 @@ $user_name    = $current_user['display_name'] ?? $current_user['username'] ?? 'U
     note.classList.add('hidden');
     submitLabel.textContent = 'Save Summary';
 
+    // Fetch live sales totals and populate the form fields.
     try {
-      const r = await fetch(`${BASE}/financial-summary?date=${encodeURIComponent(date)}`);
+      const liveRes = await fetch(`${BASE}/financial-summary/live?date=${encodeURIComponent(date)}`, { headers: authHeader });
+      if (liveRes.ok) {
+        const liveData = await liveRes.json();
+        const totals = liveData.data || liveData;
+        if (totals.total_sales > 0 || totals.transfer_card_sales > 0) {
+          setField('total_sales', totals.total_sales);
+          setField('transfer_card_sales', totals.transfer_card_sales);
+          recalculate();
+        }
+      }
+    } catch (_) {}
+
+    // Then check for an existing saved record for the date.
+    try {
+      const r = await fetch(`${BASE}/financial-summary?date=${encodeURIComponent(date)}`, { headers: authHeader });
       if (r.status === 404) {
         badge.classList.remove('hidden');
         return;
       }
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const d = await r.json();
-      const record = Array.isArray(d) ? d[0] : d;
+      const records = Array.isArray(d) ? d : (d.data ? d.data : [d]);
+      const record  = records.find(rec => rec && rec.id) || null;
       if (record && record.id) {
         existingRecordId = record.id;
         populateForm(record);
@@ -501,7 +518,7 @@ $user_name    = $current_user['display_name'] ?? $current_user['username'] ?? 'U
     recalculate();
 
     const payload = {
-      summary_date:        date,
+      date:                date,
       total_sales:         parseNum('total_sales'),
       transfer_card_sales: parseNum('transfer_card_sales'),
       cash_sales:          parseNum('cash_sales'),
@@ -522,14 +539,15 @@ $user_name    = $current_user['display_name'] ?? $current_user['username'] ?? 'U
     label.textContent = 'Saving…';
 
     try {
-      const method = existingRecordId ? 'PUT' : 'POST';
-      const url    = existingRecordId
-        ? `${BASE}/financial-summary/${existingRecordId}`
-        : `${BASE}/financial-summary`;
+      const method = 'POST'; // DB uses upsert by date, so always POST
+      const url    = `${BASE}/financial-summary`;
 
       const r = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + (localStorage.getItem('orion_token') || ''),
+        },
         body: JSON.stringify(payload),
       });
       const d = await r.json();

@@ -134,7 +134,7 @@ async function loadStock() {
   if (!date) return;
   document.getElementById('stockBody').innerHTML = '<tr><td colspan="8" class="text-center py-10 text-white/30">Loading…</td></tr>';
   try {
-    const r = await fetch(`${BASE}/stock?date=${date}`, {headers: authH()});
+    const r = await fetch(`${BASE}/stock/products?date=${date}`, {headers: authH()});
     const d = await r.json();
     const rows = Array.isArray(d) ? d : (d.data || d.stock || []);
     renderStockRows(rows);
@@ -153,12 +153,13 @@ function calcClosing(tr) {
 function renderStockRows(rows) {
   const tbody = document.getElementById('stockBody');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="text-center py-10 text-white/30">No stock data for this date.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center py-10 text-white/30">No products found.</td></tr>';
     return;
   }
   tbody.innerHTML = '';
   rows.forEach(row => {
-    const closing = (parseFloat(row.opening_stock||0) + parseFloat(row.import_qty||0) - parseFloat(row.sold_qty||0));
+    const soldQty = parseFloat(row.sold_qty || row.sold_stock || 0);
+    const closing = (parseFloat(row.opening_stock||0) + parseFloat(row.import_qty||0) - soldQty);
     const lowStock = closing < 3;
     const tr = document.createElement('tr');
     tr.dataset.productId = row.product_id || row.id;
@@ -169,8 +170,8 @@ function renderStockRows(rows) {
       <td><span class="px-2 py-0.5 rounded text-xs font-semibold" style="background:rgba(50,237,255,0.1);color:rgba(50,237,255,0.8)">${row.category||'—'}</span></td>
       <td><input type="number" class="orion-input opening-input" style="width:72px" min="0" step="1" value="${row.opening_stock||0}" /></td>
       <td><span class="import-disp text-cyan-300/80 font-semibold text-sm" data-val="${row.import_qty||0}">${row.import_qty||0}</span></td>
-      <td><span class="sold-disp text-orange-400/80 font-semibold text-sm" data-val="${row.sold_qty||0}">${row.sold_qty||0}</span></td>
-      <td><span class="closing-cell" id="closing-${row.product_id||row.id}">${closing}</span></td>
+      <td><span class="sold-disp text-orange-400/80 font-semibold text-sm" data-val="${soldQty}">${soldQty}</span></td>
+      <td><span class="closing-cell" id="closing-${row.product_id||row.id}">${Math.max(0,closing)}</span></td>
       <td class="text-white/30 text-xs">${fmt(row.updated_at)}</td>
       <td>
         <div class="flex items-center gap-1">
@@ -184,7 +185,7 @@ function renderStockRows(rows) {
       const c = calcClosing(tr);
       const pid = row.product_id || row.id;
       const el  = document.getElementById(`closing-${pid}`);
-      if (el) el.textContent = c;
+      if (el) el.textContent = Math.max(0, c);
       if (c < 3) tr.classList.add('low-stock-row'); else tr.classList.remove('low-stock-row');
     });
 
@@ -198,7 +199,9 @@ async function saveRow(tr) {
   const date     = document.getElementById('stockDate').value;
   const opening  = parseFloat(tr.querySelector('.opening-input').value) || 0;
   const closing  = calcClosing(tr);
-  const payload  = { product_id: pid, date, opening_stock: opening, closing_stock: closing };
+  const importQty = parseFloat(tr.querySelector('.import-disp').dataset.val) || 0;
+  const soldQty   = parseFloat(tr.querySelector('.sold-disp').dataset.val) || 0;
+  const payload  = { product_id: pid, date, opening_stock: opening, closing_stock: Math.max(0, closing), import_qty: importQty, sold_stock: soldQty };
 
   try {
     let r;
@@ -209,7 +212,8 @@ async function saveRow(tr) {
     }
     const d = await r.json();
     if (r.ok) {
-      if (d.id || d.stock_id) tr.dataset.stockId = d.id || d.stock_id;
+      const newId = d.id || d.stock_id || stockId;
+      if (newId) tr.dataset.stockId = newId;
       const badge = document.getElementById(`rsaved-${pid}`);
       if (badge) { badge.classList.add('show'); setTimeout(()=>badge.classList.remove('show'),2000); }
     }

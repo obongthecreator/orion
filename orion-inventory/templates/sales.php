@@ -336,11 +336,11 @@ $is_admin     = in_array( $user_role, [ 'admin', 'super_admin' ], true );
       <div id="paymentInputs" class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
         <div id="transferField" class="hidden">
           <label for="transferAmount">Transfer / Card Amount (₦)</label>
-          <input type="number" id="transferAmount" class="orion-input" placeholder="0.00" min="0" step="0.01">
+          <input type="text" inputmode="decimal" id="transferAmount" class="orion-input" placeholder="0.00">
         </div>
         <div id="cashField" class="hidden">
           <label for="cashAmount">Cash Amount (₦)</label>
-          <input type="number" id="cashAmount" class="orion-input" placeholder="0.00" min="0" step="0.01">
+          <input type="text" inputmode="decimal" id="cashAmount" class="orion-input" placeholder="0.00">
         </div>
         <div id="remainingField" class="hidden">
           <label>Remaining</label>
@@ -410,8 +410,15 @@ let rowCount       = 0;
 let submitCooldown = false;
 
 /* ── Formatters ── */
-const fmt = n => '₦' + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const fmt     = n => '₦' + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const parseNum = v => parseFloat((v || '').toString().replace(/[^\d.]/g, '')) || 0;
+
+function formatMoneyInput(el) {
+  const raw   = el.value.replace(/[^0-9.]/g, '');
+  const parts = raw.split('.');
+  const int   = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  el.value    = parts.length > 1 ? int + '.' + parts[1].slice(0, 2) : int;
+}
 
 /* ── Toast ── */
 function showToast(msg, type = 'success') {
@@ -439,7 +446,7 @@ function buildOptions(selectedId = '') {
   let opts = '<option value="">— Select product —</option>';
   products.forEach(p => {
     const sel = String(p.id) === String(selectedId) ? ' selected' : '';
-    opts += `<option value="${p.id}" data-category="${p.category || ''}" data-price="${p.price || 0}"${sel}>${p.name}</option>`;
+    opts += `<option value="${p.id}" data-category="${p.category_name || p.category || ''}" data-price="${p.price || 0}"${sel}>${p.name}</option>`;
   });
   return opts;
 }
@@ -447,9 +454,9 @@ function buildOptions(selectedId = '') {
 /* ── Add row ── */
 function addRow() {
   rowCount++;
-  const idx  = rowCount;
+  const idx   = rowCount;
   const tbody = document.getElementById('itemsBody');
-  const tr   = document.createElement('tr');
+  const tr    = document.createElement('tr');
   tr.dataset.idx = idx;
   tr.innerHTML = `
     <td class="text-center text-xs font-semibold" style="color:rgba(255,255,255,0.4);">${tbody.rows.length + 1}</td>
@@ -463,7 +470,7 @@ function addRow() {
              style="background:rgba(255,255,255,0.02);cursor:default;color:rgba(255,255,255,0.5);">
     </td>
     <td>
-      <input type="number" class="orion-input item-price" data-idx="${idx}" placeholder="0" min="0" step="0.01" value="0">
+      <input type="text" inputmode="decimal" class="orion-input item-price" data-idx="${idx}" placeholder="0" value="">
     </td>
     <td>
       <div class="flex items-center gap-1">
@@ -473,7 +480,7 @@ function addRow() {
       </div>
     </td>
     <td>
-      <input type="number" class="orion-input item-discount" data-idx="${idx}" placeholder="0" min="0" step="0.01" value="0">
+      <input type="text" inputmode="decimal" class="orion-input item-discount" data-idx="${idx}" placeholder="0" value="0">
     </td>
     <td>
       <span class="item-total font-semibold text-sm" data-idx="${idx}" style="color:#32EDFF;">₦0</span>
@@ -496,13 +503,22 @@ function attachRowEvents(tr) {
   tr.querySelector('.item-product').addEventListener('change', function() {
     const opt = this.options[this.selectedIndex];
     tr.querySelector('.item-category').value = opt.dataset.category || '';
-    tr.querySelector('.item-price').value    = parseFloat(opt.dataset.price) || 0;
+    const price = parseFloat(opt.dataset.price) || 0;
+    tr.querySelector('.item-price').value = price ? price.toLocaleString('en-NG') : '';
     updateRowTotal(idx);
   });
 
-  ['item-price', 'item-qty', 'item-discount'].forEach(cls => {
-    tr.querySelector(`.${cls}`).addEventListener('input', () => updateRowTotal(idx));
+  tr.querySelector('.item-price').addEventListener('input', function() {
+    formatMoneyInput(this);
+    updateRowTotal(idx);
   });
+
+  tr.querySelector('.item-discount').addEventListener('input', function() {
+    formatMoneyInput(this);
+    updateRowTotal(idx);
+  });
+
+  tr.querySelector('.item-qty').addEventListener('input', () => updateRowTotal(idx));
 
   tr.querySelector('.qty-dec').addEventListener('click', () => {
     const q = tr.querySelector('.item-qty');
@@ -523,13 +539,21 @@ function attachRowEvents(tr) {
 }
 
 function updateRowTotal(idx) {
-  const tr       = document.querySelector(`tr[data-idx="${idx}"]`);
-  const price    = parseNum(tr.querySelector('.item-price').value);
-  const qty      = parseInt(tr.querySelector('.item-qty').value) || 1;
-  const disc     = parseNum(tr.querySelector('.item-discount').value);
-  const total    = Math.max(0, price * qty - disc);
+  const tr    = document.querySelector(`tr[data-idx="${idx}"]`);
+  const price = parseNum(tr.querySelector('.item-price').value);
+  const qty   = parseInt(tr.querySelector('.item-qty').value) || 1;
+  const disc  = parseNum(tr.querySelector('.item-discount').value);
+  const total = Math.max(0, price * qty - disc);
   tr.querySelector('.item-total').textContent = fmt(total);
   updateTotals();
+}
+
+function getGrandTotal() {
+  let grand = 0;
+  document.querySelectorAll('#itemsBody tr').forEach(tr => {
+    grand += parseNum(tr.querySelector('.item-total')?.textContent);
+  });
+  return grand;
 }
 
 function updateTotals() {
@@ -543,7 +567,7 @@ function updateTotals() {
   });
   document.getElementById('grandTotal').textContent    = fmt(grand);
   document.getElementById('discountTotal').textContent = fmt(discSum);
-  updateRemaining();
+  syncPaymentAmounts();
 }
 
 function renumberRows() {
@@ -553,6 +577,25 @@ function renumberRows() {
 }
 
 /* ── Payment method ── */
+function syncPaymentAmounts() {
+  const method = document.querySelector('input[name="paymentMethod"]:checked')?.value;
+  if (!method) return;
+  const grand = getGrandTotal();
+  if (method === 'transfer') {
+    document.getElementById('transferAmount').value    = grand.toLocaleString('en-NG', {minimumFractionDigits:2,maximumFractionDigits:2});
+    document.getElementById('transferAmount').readOnly = true;
+  } else if (method === 'cash') {
+    document.getElementById('cashAmount').value    = grand.toLocaleString('en-NG', {minimumFractionDigits:2,maximumFractionDigits:2});
+    document.getElementById('cashAmount').readOnly = true;
+  } else if (method === 'both') {
+    const cash     = parseNum(document.getElementById('cashAmount').value);
+    const transfer = Math.max(0, grand - cash);
+    document.getElementById('transferAmount').value    = transfer.toLocaleString('en-NG', {minimumFractionDigits:2,maximumFractionDigits:2});
+    document.getElementById('transferAmount').readOnly = true;
+    document.getElementById('cashAmount').readOnly     = false;
+  }
+}
+
 document.querySelectorAll('input[name="paymentMethod"]').forEach(radio => {
   radio.addEventListener('change', function() {
     const val = this.value;
@@ -562,25 +605,39 @@ document.querySelectorAll('input[name="paymentMethod"]').forEach(radio => {
     document.getElementById('transferField').classList.toggle('hidden', val === 'cash');
     document.getElementById('cashField').classList.toggle('hidden',     val === 'transfer');
     document.getElementById('remainingField').classList.toggle('hidden', val !== 'both');
-    updateRemaining();
+
+    // Reset amounts and apply logic
+    document.getElementById('transferAmount').value    = '';
+    document.getElementById('transferAmount').readOnly = false;
+    document.getElementById('cashAmount').value        = '';
+    document.getElementById('cashAmount').readOnly     = false;
+    syncPaymentAmounts();
   });
+});
+
+// When cash changes (Both mode): auto-compute transfer = total - cash
+document.getElementById('cashAmount').addEventListener('input', function() {
+  formatMoneyInput(this);
+  const method = document.querySelector('input[name="paymentMethod"]:checked')?.value;
+  if (method !== 'both') return;
+  const grand    = getGrandTotal();
+  const cash     = parseNum(this.value);
+  const transfer = Math.max(0, grand - cash);
+  document.getElementById('transferAmount').value = transfer.toLocaleString('en-NG', {minimumFractionDigits:2,maximumFractionDigits:2});
+  updateRemaining();
 });
 
 function updateRemaining() {
   const method = document.querySelector('input[name="paymentMethod"]:checked')?.value;
   if (method !== 'both') return;
-  const grand     = parseNum(document.getElementById('grandTotal').textContent);
+  const grand     = getGrandTotal();
   const transfer  = parseNum(document.getElementById('transferAmount').value);
   const cash      = parseNum(document.getElementById('cashAmount').value);
   const remaining = grand - transfer - cash;
   const el        = document.getElementById('remainingAmount');
   el.textContent  = fmt(remaining);
-  el.style.color  = remaining <= 0 ? '#32ed80' : '#ff8080';
+  el.style.color  = Math.abs(remaining) < 0.01 ? '#32ed80' : '#ff8080';
 }
-
-['transferAmount', 'cashAmount'].forEach(id => {
-  document.getElementById(id)?.addEventListener('input', updateRemaining);
-});
 
 /* ── Confirm checkbox enables submit ── */
 document.getElementById('confirmCheck').addEventListener('change', function() {
@@ -595,14 +652,22 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
   if (submitCooldown) return;
 
   const rows  = [...document.querySelectorAll('#itemsBody tr')];
-  const items = rows.map(tr => ({
-    product_id: tr.querySelector('.item-product').value,
-    product_name: tr.querySelector('.item-product').options[tr.querySelector('.item-product').selectedIndex]?.text || '',
-    category:  tr.querySelector('.item-category').value,
-    price:     parseNum(tr.querySelector('.item-price').value),
-    qty:       parseInt(tr.querySelector('.item-qty').value) || 1,
-    discount:  parseNum(tr.querySelector('.item-discount').value),
-  })).filter(i => i.product_id);
+  const items = rows.map(tr => {
+    const sel      = tr.querySelector('.item-product');
+    const price    = parseNum(tr.querySelector('.item-price').value);
+    const qty      = parseInt(tr.querySelector('.item-qty').value) || 1;
+    const discount = parseNum(tr.querySelector('.item-discount').value);
+    const total    = Math.max(0, price * qty - discount);
+    return {
+      product_id:   sel.value,
+      product_name: sel.options[sel.selectedIndex]?.text || '',
+      category_name: tr.querySelector('.item-category').value,
+      price,
+      quantity: qty,
+      discount,
+      total,
+    };
+  }).filter(i => i.product_id);
 
   if (!items.length) { showToast('Please add at least one item.', 'error'); return; }
 
@@ -612,15 +677,29 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
   const payMethod = document.querySelector('input[name="paymentMethod"]:checked')?.value;
   if (!payMethod) { showToast('Please select a payment method.', 'error'); return; }
 
+  const grandTotal     = getGrandTotal();
+  const transferAmount = parseNum(document.getElementById('transferAmount').value);
+  const cashAmount     = parseNum(document.getElementById('cashAmount').value);
+
+  // For 'both' mode, validate split sums to total
+  if (payMethod === 'both') {
+    const diff = Math.abs(transferAmount + cashAmount - grandTotal);
+    if (diff > 0.02) {
+      showToast(`Transfer (${fmt(transferAmount)}) + Cash (${fmt(cashAmount)}) must equal Total (${fmt(grandTotal)}).`, 'error');
+      return;
+    }
+  }
+
   const payload = {
     items,
     customer_name:      customerName,
     customer_whatsapp:  document.getElementById('customerWhatsapp').value.trim(),
     payment_method:     payMethod,
-    transfer_amount:    parseNum(document.getElementById('transferAmount').value),
-    cash_amount:        parseNum(document.getElementById('cashAmount').value),
+    transfer_amount:    payMethod === 'cash'     ? 0 : transferAmount,
+    cash_amount:        payMethod === 'transfer' ? 0 : cashAmount,
     order_date:         document.getElementById('orderDate').value,
-    grand_total:        parseNum(document.getElementById('grandTotal').textContent),
+    total_amount:       grandTotal,
+    discount_total:     parseNum(document.getElementById('discountTotal').textContent),
   };
 
   const btn = document.getElementById('submitBtn');
@@ -639,9 +718,9 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
     });
     const data = await res.json();
 
-    if (data.success) {
+    if (res.ok && (data.success || data.id)) {
       showToast('Sale recorded successfully!');
-      buildReceipt(payload, data.sale_id || data.id);
+      buildReceipt(payload, data.id);
       document.getElementById('receiptModal').classList.add('open');
     } else {
       showToast(data.message || 'Failed to record sale.', 'error');
@@ -672,14 +751,14 @@ function buildReceipt(payload, saleId) {
   lines += `Staff    : <?php echo htmlspecialchars($user_name); ?>\n`;
   lines += `--------------------------------\n`;
   payload.items.forEach((item, i) => {
-    const total = Math.max(0, item.price * item.qty - item.discount);
+    const total = Math.max(0, item.price * item.quantity - item.discount);
     lines += `${i+1}. ${item.product_name}\n`;
-    lines += `   ${fmt(item.price)} x ${item.qty}`;
+    lines += `   ${fmt(item.price)} x ${item.quantity}`;
     if (item.discount > 0) lines += ` - disc ${fmt(item.discount)}`;
     lines += ` = ${fmt(total)}\n`;
   });
   lines += `--------------------------------\n`;
-  lines += `TOTAL    : ${fmt(payload.grand_total)}\n`;
+  lines += `TOTAL    : ${fmt(payload.total_amount)}\n`;
   lines += `Payment  : ${payload.payment_method.toUpperCase()}\n`;
   if (payload.payment_method === 'transfer' || payload.payment_method === 'both') lines += `Transfer : ${fmt(payload.transfer_amount)}\n`;
   if (payload.payment_method === 'cash'     || payload.payment_method === 'both') lines += `Cash     : ${fmt(payload.cash_amount)}\n`;
